@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, alias="API_PORT")
     api_workers: int = Field(default=1, alias="API_WORKERS")
 
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    google_client_id: str = Field(default="", alias="GOOGLE_CLIENT_ID")
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = Field(default=1440, alias="JWT_EXPIRE_MINUTES")
+
     # ── Monitoring ────────────────────────────────────────────────────────────
     enable_metrics: bool = Field(default=True, alias="ENABLE_METRICS")
     otlp_endpoint: str = Field(

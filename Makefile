@@ -15,7 +15,7 @@ MYPY      = .venv/bin/mypy
 COMPOSE   = docker compose -f docker/docker-compose.yml
 COMPOSE_DEV = $(COMPOSE) -f docker/docker-compose.dev.yml
 
-.PHONY: help setup install dev-up dev-down migrate test test-unit test-integration \
+.PHONY: help setup install dev-up dev-down dev-remote migrate test test-unit test-integration \
         lint format typecheck dry-run logs clean
 
 help:          ## Show this help
@@ -61,6 +61,19 @@ migrate-sql:   ## Print SQL for next migration (dry-run)
 	$(ALEMBIC) upgrade head --sql
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
+
+dev-remote:    ## Run backend locally connected to the remote Neon DB (reads .prod.env)
+	@echo "Starting backend with remote DB (development mode)..."
+	@DATABASE_URL=$$(grep '^DATABASE_URL' .prod.env | cut -d= -f2-) \
+	 DATABASE_SYNC_URL=$$(grep '^DATABASE_SYNC_URL' .prod.env | cut -d= -f2-) \
+	 SECRET_KEY=$$(grep '^SECRET_KEY' .prod.env | cut -d= -f2-) \
+	 APP_ENV=development \
+	 LOG_LEVEL=INFO \
+	 INGESTION_MODE=safe \
+	 DRY_RUN=false \
+	 REDIS_ENABLED=false \
+	 ENABLE_METRICS=false \
+	 $(UVICORN) app.api.main:app --host 0.0.0.0 --port 8000 --reload
 
 dry-run:       ## Run one ingestion cycle in dry_run mode (no real HTTP)
 	DRY_RUN=true INGESTION_MODE=dry_run $(PYTHON) -m scripts.run_ingestion

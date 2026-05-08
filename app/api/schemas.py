@@ -36,6 +36,8 @@ class PropertyOut(OrmModel):
     floor: Optional[int] = None
     rooms: Optional[int] = None
     market_value_estimate: Optional[Decimal] = None
+    latitude: Optional[Decimal] = None
+    longitude: Optional[Decimal] = None
     created_at: datetime
     updated_at: datetime
 

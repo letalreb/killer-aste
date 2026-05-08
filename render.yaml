@@ -1,4 +1,28 @@
 services:
+  # ── Frontend (Static Site) ─────────────────────────────────────────────────
+  - type: web
+    name: killeraste-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    staticPublishPath: dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://killeraste.onrender.com
+      - key: VITE_SKIP_AUTH
+        value: "false"
+      # Set manually in Render dashboard:
+      # VITE_GOOGLE_CLIENT_ID
+
+  # ── Backend (Python/FastAPI) ───────────────────────────────────────────────
   - type: web
     name: killeraste
     runtime: python
@@ -28,3 +52,5 @@ services:
       # SECRET_KEY
       # DATABASE_URL      (asyncpg URL with ?ssl=require)
       # DATABASE_SYNC_URL (psycopg2 URL with ?sslmode=require)
+      # GOOGLE_CLIENT_ID
+      # FRONTEND_URL      (https://killeraste-frontend.onrender.com)

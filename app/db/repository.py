@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 import structlog
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -168,9 +168,7 @@ class ValuationRepository:
         await self._session.flush()
         return obj
 
-    async def get_latest_for_auction(
-        self, auction_id: uuid.UUID
-    ) -> Optional[Valuation]:
+    async def get_by_auction(self, auction_id: uuid.UUID) -> Optional[Valuation]:
         result = await self._session.execute(
             select(Valuation)
             .where(Valuation.auction_id == auction_id)
@@ -178,6 +176,15 @@ class ValuationRepository:
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+    async def get_latest_for_auction(self, auction_id: uuid.UUID) -> Optional[Valuation]:
+        return await self.get_by_auction(auction_id)
+
+    async def update(self, valuation_id: uuid.UUID, data: dict) -> None:
+        payload = {k: v for k, v in data.items() if k not in ("id", "auction_id", "created_at")}
+        await self._session.execute(
+            update(Valuation).where(Valuation.id == valuation_id).values(**payload)
+        )
 
 
 class RiskFlagRepository:
@@ -197,6 +204,11 @@ class RiskFlagRepository:
             .order_by(RiskFlag.severity.desc())
         )
         return result.scalars().all()
+
+    async def delete_by_auction(self, auction_id: uuid.UUID) -> None:
+        await self._session.execute(
+            delete(RiskFlag).where(RiskFlag.auction_id == auction_id)
+        )
 
 
 class IngestionLogRepository:

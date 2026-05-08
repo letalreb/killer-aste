@@ -31,8 +31,9 @@ router = APIRouter(prefix="/auctions", tags=["auctions"])
 async def list_auctions(
     status: Optional[str] = Query(default="scheduled"),
     province: Optional[str] = Query(default=None, max_length=4),
+    min_roi: Optional[float] = Query(default=None, ge=0),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ) -> list[AuctionOut]:
     repo = AuctionRepository(db)
@@ -44,6 +45,7 @@ async def list_auctions(
     auctions = await repo.list_upcoming(
         status=auction_status,
         province=province,
+        min_roi=min_roi,
         limit=page_size,
         offset=(page - 1) * page_size,
     )

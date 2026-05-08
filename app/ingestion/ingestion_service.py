@@ -40,6 +40,7 @@ from app.ingestion.http_client import (
     RateLimited,
 )
 from app.ingestion.parser import is_last_page, parse_api_response
+from app.ingestion.pvp_detail import fetch_detail
 
 log = structlog.get_logger(__name__)
 
@@ -204,7 +205,7 @@ class IngestionService:
     # ── Record processing ─────────────────────────────────────────────────────
 
     async def _process_record(
-        self, _client: AntiBanHTTPClient, record: dict, stats: dict
+        self, client: AntiBanHTTPClient, record: dict, stats: dict
     ) -> None:
         prop_data = record["property_data"]
         auction_data = record["auction_data"]
@@ -216,12 +217,18 @@ class IngestionService:
 
             auction, auction_created = await self._auctions.upsert(auction_data)
 
+            # Fetch detail page for new auctions, or existing ones still missing source_url.
+            # This populates the real expert appraisal value and participation link.
+            needs_detail = auction_created or not auction.source_url
+            if needs_detail and not self._settings.is_dry_run:
+                await self._enrich_from_detail(client, auction, prop, external_id)
+
             if auction_created:
                 stats["records_inserted"] += 1
-                await self._compute_analytics(auction, prop)
             else:
                 stats["records_updated"] += 1
 
+            await self._compute_analytics(auction, prop)
             await self._session.commit()
 
         except Exception as exc:
@@ -233,22 +240,66 @@ class IngestionService:
             await self._session.rollback()
             stats["errors_count"] += 1
 
-    async def _compute_analytics(self, auction, prop) -> None:
-        """Run ROI + risk engines and persist results."""
+    async def _enrich_from_detail(
+        self, client: AntiBanHTTPClient, auction, prop, external_id: str
+    ) -> None:
+        """Fetch the PVP detail page and update auction + property in place."""
+        src_cfg = self._yaml_cfg["ingestion"]["sources"].get("pvp", {})
+        base_url = src_cfg.get("base_url", "https://pvp.giustizia.it")
+        detail_api_path = src_cfg.get(
+            "detail_api_path", "/ric-496b258c-986a1b71/ric-ms/offerta/{id}"
+        )
+        detail_html_path = src_cfg.get("detail_html_path", "/pvp/it/detail_offerta.page")
+
         try:
-            # ROI
+            detail = await fetch_detail(
+                client,
+                base_url,
+                external_id,
+                detail_api_path=detail_api_path,
+                detail_html_path=detail_html_path,
+            )
+        except Exception as exc:
+            log.warning("ingestion.detail_fetch_error", external_id=external_id, error=str(exc))
+            return
+
+        # Persist detail fields directly onto the ORM objects (already in session)
+        if detail.get("source_url"):
+            auction.source_url = detail["source_url"]
+        if detail.get("expert_report_url"):
+            auction.expert_report_url = detail["expert_report_url"]
+        if detail.get("deposit_required") and not auction.deposit_required:
+            auction.deposit_required = detail["deposit_required"]
+        if detail.get("auction_deadline") and not auction.auction_deadline:
+            auction.auction_deadline = detail["auction_deadline"]
+        if detail.get("market_value") and not prop.market_value_estimate:
+            prop.market_value_estimate = detail["market_value"]
+            log.info(
+                "ingestion.appraisal_stored",
+                external_id=external_id,
+                market_value=float(detail["market_value"]),
+            )
+
+    async def _compute_analytics(self, auction, prop) -> None:
+        """Run ROI + risk engines and persist results, replacing any existing valuation."""
+        try:
+            # ROI — uses real market_value if available, else engine falls back to ×1.3
             roi_result = self._roi_engine.calculate(
                 base_price=float(auction.base_price or 0),
                 area_sqm=float(prop.area_sqm or 0),
                 market_value=float(prop.market_value_estimate or 0),
                 property_type=prop.property_type.value if prop.property_type else "other",
             )
-            await self._valuations.create(
-                {
-                    "auction_id": auction.id,
-                    **roi_result.to_db_dict(),
-                }
-            )
+            # Replace any stale valuation for this auction
+            existing = await self._valuations.get_by_auction(auction.id)
+            if existing:
+                await self._valuations.update(
+                    existing.id, {"auction_id": auction.id, **roi_result.to_db_dict()}
+                )
+            else:
+                await self._valuations.create(
+                    {"auction_id": auction.id, **roi_result.to_db_dict()}
+                )
 
             # Risk
             risk_result = self._risk_engine.evaluate(
@@ -266,12 +317,10 @@ class IngestionService:
                 },
             )
             if risk_result.flags:
+                await self._flags.delete_by_auction(auction.id)
                 await self._flags.create_bulk(
                     [
-                        {
-                            "auction_id": auction.id,
-                            **f.to_db_dict(),
-                        }
+                        {"auction_id": auction.id, **f.to_db_dict()}
                         for f in risk_result.flags
                     ]
                 )

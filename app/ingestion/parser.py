@@ -125,6 +125,20 @@ def _detect_encumbrances(desc: Optional[str]) -> Optional[str]:
     return ", ".join(found) if found else None
 
 
+_SQM_RE = __import__("re").compile(r"(\d[\d.,]*)\s*m(?:q|²|2)\b", __import__("re").IGNORECASE)
+
+
+def _extract_sqm(desc: Optional[str]) -> Optional[Decimal]:
+    """Parse area from free-text description, e.g. '85 mq' or '120,5 m²'."""
+    if not desc:
+        return None
+    m = _SQM_RE.search(desc)
+    if not m:
+        return None
+    raw = m.group(1).replace(",", ".")
+    return _to_decimal(raw)
+
+
 def parse_api_response(data: dict) -> list[dict]:
     """
     Parse one page of the PVP /ricerca/vendite JSON response.
@@ -173,6 +187,7 @@ def _parse_item(item: dict) -> Optional[dict]:
         "latitude": _to_decimal(coord.get("latitudine")),
         "longitude": _to_decimal(coord.get("longitudine")),
         "property_type": _property_type(item.get("categoriaBene") or []),
+        "area_sqm": _extract_sqm(desc),
         "description": desc,
         "encumbrances": _detect_encumbrances(desc),
     }

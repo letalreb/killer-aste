@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import analytics, auctions, properties
+from app.api.routes import analytics, auctions, auth, properties
 from app.config.settings import get_settings
 from app.ingestion.scheduler import start_scheduler, stop_scheduler
 
@@ -80,9 +80,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_frontend_origins = [
+    "http://localhost:5173",
+    "http://localhost:4173",
+]
+if settings.is_production:
+    import os
+    _prod_origin = os.getenv("FRONTEND_URL", "")
+    if _prod_origin:
+        _frontend_origins.append(_prod_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if not settings.is_production else ["https://yourdomain.com"],
+    allow_origins=["*"] if not settings.is_production else _frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -97,6 +107,7 @@ if settings.enable_metrics:
         pass
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+app.include_router(auth.router)
 app.include_router(auctions.router, prefix="/api/v1")
 app.include_router(properties.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")

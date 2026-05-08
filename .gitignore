@@ -13,3 +13,6 @@ build/
 *.egg-info/
 .ruff_cache/
 node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local

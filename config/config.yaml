@@ -58,6 +58,8 @@ ingestion:
       name: "Portale Vendite Pubbliche"
       base_url: "https://pvp.giustizia.it"
       search_path: "/ric-496b258c-986a1b71/ric-ms/ricerca/vendite"
+      detail_api_path: "/ric-496b258c-986a1b71/ric-ms/offerta/{id}"
+      detail_html_path: "/pvp/it/detail_offerta.page"
       enabled: true
       max_pages_per_run: 40
       api_page_size: 20
