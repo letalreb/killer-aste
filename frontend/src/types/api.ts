@@ -69,11 +69,15 @@ export interface AuctionStats {
   [status: string]: number
 }
 
+export type UserRole = 'standard' | 'premium' | 'admin'
+
 export interface User {
   sub: string
   email: string
   name: string
   picture?: string
+  role: UserRole
+  max_favorites: number
 }
 
 export interface AuthResponse {

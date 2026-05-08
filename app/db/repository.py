@@ -22,8 +22,11 @@ from app.db.models import (
     AuctionStatus,
     IngestionLog,
     IngestionStatus,
+    LoginAudit,
     Property,
     RiskFlag,
+    User,
+    UserRole,
     Valuation,
 )
 
@@ -281,3 +284,70 @@ class IngestionLogRepository:
         if not log or not log.extra:
             return 0
         return int(log.extra.get("next_page", 0))
+
+
+class UserRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_google_sub(self, google_sub: str) -> Optional[User]:
+        result = await self._session.execute(
+            1select(User).where(User.google_sub == google_sub)
+        )
+        return result.scalar_one_or_none()
+
+    async def upsert(self, google_sub: str, email: str, name: str, picture: Optional[str]) -> User:
+        """Create user if not exists, update name/picture/last_login_at on every login."""
+        now = datetime.now(timezone.utc)
+        stmt = (
+            pg_insert(User)
+            .values(
+                google_sub=google_sub,
+                email=email,
+                name=name,
+                picture=picture,
+                last_login_at=now,
+            )
+            .on_conflict_do_update(
+                index_elements=["google_sub"],
+                set_={
+                    "email": email,
+                    "name": name,
+                    "picture": picture,
+                    "last_login_at": now,
+                },
+            )
+            .returning(User)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
+
+    async def set_role(self, user_id: uuid.UUID, role: UserRole) -> None:
+        max_fav = 10 if role == UserRole.PREMIUM else (999 if role == UserRole.ADMIN else 3)
+        await self._session.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(role=role, max_favorites=max_fav)
+        )
+
+
+class LoginAuditRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(
+        self,
+        user_id: uuid.UUID,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        extra: Optional[dict] = None,
+    ) -> LoginAudit:
+        audit = LoginAudit(
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            extra=extra,
+        )
+        self._session.add(audit)
+        await self._session.flush()
+        return audit

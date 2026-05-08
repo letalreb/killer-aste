@@ -1,4 +1,4 @@
-import { useFavoritesStore, MAX_FAVORITES, type FavoriteItem } from '../store/favoritesStore'
+import { useFavoritesStore, type FavoriteItem } from '../store/favoritesStore'
 
 interface Props {
   readonly item: FavoriteItem
@@ -6,7 +6,7 @@ interface Props {
 }
 
 export function FavoriteButton({ item, size = 'md' }: Props) {
-  const { has, isFull, toggle } = useFavoritesStore()
+  const { has, isFull, toggle, maxFavorites } = useFavoritesStore()
   const isFav = has(item.id)
   const full = isFull()
   const disabled = !isFav && full
@@ -27,7 +27,7 @@ export function FavoriteButton({ item, size = 'md' }: Props) {
         isFav
           ? 'Rimuovi dai preferiti'
           : disabled
-          ? `Massimo ${MAX_FAVORITES} preferiti raggiunto`
+          ? `Massimo ${maxFavorites} preferiti raggiunto`
           : 'Aggiungi ai preferiti'
       }
       className={`

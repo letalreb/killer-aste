@@ -80,6 +80,12 @@ class IngestionStatus(str, PyEnum):
     DRY_RUN = "dry_run"
 
 
+class UserRole(str, PyEnum):
+    STANDARD = "standard"
+    PREMIUM = "premium"
+    ADMIN = "admin"
+
+
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -259,6 +265,60 @@ class RiskFlag(TimestampMixin, Base):
         Index("ix_risk_flags_auction_id", "auction_id"),
         Index("ix_risk_flags_severity", "severity"),
         Index("ix_risk_flags_type", "flag_type"),
+    )
+
+
+class User(TimestampMixin, Base):
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    google_sub: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    email: Mapped[str] = mapped_column(String(256), nullable=False)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    picture: Mapped[Optional[str]] = mapped_column(Text)
+
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, **_ENUM_VALS), nullable=False, default=UserRole.STANDARD
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    max_favorites: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+
+    preferences: Mapped[Optional[dict]] = mapped_column(JSONB)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    login_audits: Mapped[list["LoginAudit"]] = relationship(
+        "LoginAudit", back_populates="user", cascade=_CASCADE
+    )
+
+    __table_args__ = (
+        Index("ix_users_email", "email"),
+        Index("ix_users_role", "role"),
+    )
+
+
+class LoginAudit(Base):
+    __tablename__ = "login_audits"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    logged_in_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    ip_address: Mapped[Optional[str]] = mapped_column(String(64))
+    user_agent: Mapped[Optional[str]] = mapped_column(Text)
+    extra: Mapped[Optional[dict]] = mapped_column(JSONB)
+
+    user: Mapped["User"] = relationship("User", back_populates="login_audits")
+
+    __table_args__ = (
+        Index("ix_login_audits_user_id", "user_id"),
+        Index("ix_login_audits_logged_in_at", "logged_in_at"),
     )
 
 

@@ -1,15 +1,17 @@
 import { useNavigate } from 'react-router-dom'
-import { useFavoritesStore, MAX_FAVORITES } from '../store/favoritesStore'
+import { useFavoritesStore } from '../store/favoritesStore'
 import { formatCurrency } from '../utils/formatters'
 
 export function FavoritesBar() {
-  const { items, remove } = useFavoritesStore()
+  const items = useFavoritesStore((s) => s.items)
+  const maxFavorites = useFavoritesStore((s) => s.maxFavorites)
+  const remove = useFavoritesStore((s) => s.remove)
   const navigate = useNavigate()
 
   if (items.length === 0) return null
 
-  const slots = Array.from({ length: MAX_FAVORITES })
-  const full = items.length === MAX_FAVORITES
+  const slots = Array.from({ length: maxFavorites })
+  const full = items.length === maxFavorites
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[200] px-3 pb-3 pointer-events-none">
@@ -20,7 +22,7 @@ export function FavoritesBar() {
           <div className="flex-shrink-0 hidden sm:block">
             <div className="text-[10px] text-slate-500 uppercase tracking-wider">Preferiti</div>
             <div className={`text-xs font-semibold ${full ? 'text-rose-400' : 'text-slate-300'}`}>
-              {items.length}/{MAX_FAVORITES}
+              {items.length}/{maxFavorites}
             </div>
           </div>
 

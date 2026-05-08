@@ -1,5 +1,27 @@
 import { useAuthStore } from '../store/authStore'
 
+function TierBadge({ role }: { readonly role: string }) {
+  if (role === 'admin') {
+    return (
+      <span className="hidden sm:inline text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30 uppercase tracking-wider">
+        Admin
+      </span>
+    )
+  }
+  if (role === 'premium') {
+    return (
+      <span className="hidden sm:inline text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
+        Premium
+      </span>
+    )
+  }
+  return (
+    <span className="hidden sm:inline text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-700 text-slate-500 border border-slate-700 uppercase tracking-wider">
+      Standard
+    </span>
+  )
+}
+
 export function Header() {
   const { user, logout } = useAuthStore()
 
@@ -18,6 +40,7 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-3">
+        {user?.role && <TierBadge role={user.role} />}
         {user?.picture ? (
           <img
             src={user.picture}

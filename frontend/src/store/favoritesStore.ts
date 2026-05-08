@@ -1,8 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export const MAX_FAVORITES = 3
-
 export interface FavoriteItem {
   id: string
   label: string       // "Milano (MI)"
@@ -12,6 +10,8 @@ export interface FavoriteItem {
 
 interface FavoritesStore {
   items: FavoriteItem[]
+  maxFavorites: number
+  setMaxFavorites: (n: number) => void
   add: (item: FavoriteItem) => boolean   // false = already full
   remove: (id: string) => void
   toggle: (item: FavoriteItem) => boolean  // returns new isFavorite state
@@ -24,9 +24,12 @@ export const useFavoritesStore = create<FavoritesStore>()(
   persist(
     (set, get) => ({
       items: [],
+      maxFavorites: 3,
+
+      setMaxFavorites: (n) => set({ maxFavorites: n }),
 
       has: (id) => get().items.some((i) => i.id === id),
-      isFull: () => get().items.length >= MAX_FAVORITES,
+      isFull: () => get().items.length >= get().maxFavorites,
 
       add: (item) => {
         if (get().isFull()) return false
@@ -47,6 +50,9 @@ export const useFavoritesStore = create<FavoritesStore>()(
 
       clear: () => set({ items: [] }),
     }),
-    { name: 'killer-aste-favorites' }
+    {
+      name: 'killer-aste-favorites',
+      partialize: (s) => ({ items: s.items, maxFavorites: s.maxFavorites }),
+    }
   )
 )

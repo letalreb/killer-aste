@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
+import { useFavoritesStore } from '../store/favoritesStore'
 
 const SKIP_AUTH = import.meta.env.VITE_SKIP_AUTH === 'true'
 
@@ -9,14 +10,21 @@ const DEV_USER = {
   email: 'dev@local',
   name: 'Dev User',
   picture: undefined,
+  role: 'standard' as const,
+  max_favorites: 3,
 }
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { token, setAuth } = useAuthStore()
+  const { token, user, setAuth } = useAuthStore()
+  const setMaxFavorites = useFavoritesStore((s) => s.setMaxFavorites)
 
   useEffect(() => {
     if (SKIP_AUTH && !token) setAuth('dev-token', DEV_USER)
   }, [token, setAuth])
+
+  useEffect(() => {
+    if (user?.max_favorites) setMaxFavorites(user.max_favorites)
+  }, [user?.max_favorites, setMaxFavorites])
 
   if (!SKIP_AUTH && !token) return <Navigate to="/login" replace />
   return <>{children}</>
