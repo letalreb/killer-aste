@@ -16,7 +16,7 @@ Flow
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, date, timezone
 from typing import Optional
 
 import structlog
@@ -168,7 +168,7 @@ class IngestionService:
                 "language": "it",
                 "page": page,
                 "size": page_size,
-                "sort": ["dataOraVendita,asc", "citta,asc"],
+                "sort": ["dataOraVendita,desc", "citta,asc"],
             }
             log.info("ingestion.fetching_page", page=page, url=url)
             response = await client.post(url, json=api_body, params=params)
@@ -184,7 +184,17 @@ class IngestionService:
 
             if is_last_page(data) or not records:
                 log.info("ingestion.dataset_complete", last_page=page)
-                return 0  # reset cursor — next run starts from the beginning
+                return 0
+
+            # Sorted desc: stop as soon as the whole page is in the past.
+            today = date.today()
+            all_past = all(
+                (r["auction_data"].get("auction_date") or datetime.min).date() < today
+                for r in records
+            )
+            if all_past:
+                log.info("ingestion.reached_past_auctions", page=page)
+                return 0
 
             page += 1
 

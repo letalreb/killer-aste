@@ -67,7 +67,6 @@ ingestion:
         flagRicerca: 0
         coordIndirizzo: ""
         raggioIndirizzo: "25"
-        dataVenditaDa: "2026-01-01"
 
 # ─────────────────────────────────────────────
 #  ROI ENGINE DEFAULTS
