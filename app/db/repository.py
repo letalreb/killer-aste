@@ -292,7 +292,7 @@ class UserRepository:
 
     async def get_by_google_sub(self, google_sub: str) -> Optional[User]:
         result = await self._session.execute(
-            1select(User).where(User.google_sub == google_sub)
+            select(User).where(User.google_sub == google_sub)
         )
         return result.scalar_one_or_none()
 
