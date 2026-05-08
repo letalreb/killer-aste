@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: killeraste
+    runtime: python
+    region: frankfurt
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: INGESTION_MODE
+        value: safe
+      - key: DRY_RUN
+        value: "false"
+      - key: REDIS_ENABLED
+        value: "false"
+      - key: ENABLE_METRICS
+        value: "false"
+      - key: API_WORKERS
+        value: "1"
+      - key: CONFIG_PATH
+        value: config/config.yaml
+      # Set these manually in the Render dashboard (never commit secrets):
+      # SECRET_KEY
+      # DATABASE_URL      (asyncpg URL with ?ssl=require)
+      # DATABASE_SYNC_URL (psycopg2 URL with ?sslmode=require)

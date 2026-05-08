@@ -1,0 +1,112 @@
+app:
+  name: "Killer Aste Intelligence Platform"
+  version: "1.0.0"
+
+# ─────────────────────────────────────────────
+#  INGESTION MODES
+#  safe     → ultra-slow, Day 14–16 rollout
+#  normal   → moderate, Phase 2+
+#  dry_run  → zero network, uses mock responses
+# ─────────────────────────────────────────────
+ingestion:
+  modes:
+    safe:
+      min_delay_seconds: 3.0
+      max_delay_seconds: 8.0
+      max_concurrent_requests: 1
+      daily_request_cap: 80          # hard ceiling per day
+      cooldown_on_429_seconds: 1800  # 30 min freeze on rate-limit
+      cooldown_on_403_seconds: 3600  # 60 min freeze on access-denied
+      think_time_probability: 0.20   # 20% chance of a long human-like pause
+      think_time_min_seconds: 15.0
+      think_time_max_seconds: 45.0
+
+    normal:
+      min_delay_seconds: 1.5
+      max_delay_seconds: 5.0
+      max_concurrent_requests: 2
+      daily_request_cap: 400
+      cooldown_on_429_seconds: 900
+      cooldown_on_403_seconds: 1800
+      think_time_probability: 0.10
+      think_time_min_seconds: 5.0
+      think_time_max_seconds: 20.0
+
+    dry_run:
+      min_delay_seconds: 0.05
+      max_delay_seconds: 0.10
+      max_concurrent_requests: 1
+      daily_request_cap: 99999
+      cooldown_on_429_seconds: 0
+      cooldown_on_403_seconds: 0
+      think_time_probability: 0.0
+      think_time_min_seconds: 0.0
+      think_time_max_seconds: 0.0
+
+  backoff:
+    initial_seconds: 60
+    max_seconds: 1800
+    multiplier: 2.0
+    jitter_factor: 0.25   # ±25% randomisation on wait time
+
+  sessions:
+    rotate_after_requests: 40         # rotate cookies/session after N requests
+    rotate_after_minutes: 45          # or after N minutes, whichever first
+
+  sources:
+    pvp:
+      name: "Portale Vendite Pubbliche"
+      base_url: "https://pvp.giustizia.it"
+      search_path: "/ric-496b258c-986a1b71/ric-ms/ricerca/vendite"
+      enabled: true
+      max_pages_per_run: 5
+      api_page_size: 10
+      api_body:
+        tipoLotto: "IMMOBILI"
+        categoriaBene: []
+        flagRicerca: 0
+        coordIndirizzo: ""
+        raggioIndirizzo: "25"
+
+# ─────────────────────────────────────────────
+#  ROI ENGINE DEFAULTS
+# ─────────────────────────────────────────────
+roi:
+  renovation:
+    light_cost_per_sqm: 400    # cosmetic refresh
+    medium_cost_per_sqm: 800   # standard renovation
+    heavy_cost_per_sqm: 1400   # full gut renovation
+  taxes:
+    registration_tax_primary: 0.02    # prima casa
+    registration_tax_secondary: 0.09  # seconda casa / investor
+    cadastral_tax_fixed: 50           # EUR
+    mortgage_tax_fixed: 50            # EUR
+  professional_fees:
+    notary_base_eur: 1500
+    notary_pct: 0.015
+    legal_pct: 0.02
+    agency_pct: 0.0            # direct purchase – no agent
+  target_min_roi_pct: 0.15    # flag if < 15%
+
+# ─────────────────────────────────────────────
+#  RISK ENGINE WEIGHTS (must sum to 1.0)
+# ─────────────────────────────────────────────
+risk:
+  weights:
+    legal_complexity: 0.30
+    location_grade: 0.20
+    property_condition: 0.20
+    debt_burden: 0.15
+    auction_history: 0.15
+  thresholds:
+    low: 30
+    medium: 60
+    high: 80
+    critical: 90
+
+# ─────────────────────────────────────────────
+#  MONITORING
+# ─────────────────────────────────────────────
+monitoring:
+  slow_request_threshold_seconds: 10.0
+  alert_on_consecutive_errors: 5

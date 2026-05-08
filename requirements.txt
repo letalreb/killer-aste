@@ -1,0 +1,51 @@
+# ── Core Framework ────────────────────────────────────────────────────────────
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy==2.0.36
+greenlet>=3.0.0        # required by SQLAlchemy async on Python 3.12+
+asyncpg==0.30.0
+alembic==1.14.0
+psycopg2-binary==2.9.10
+
+# ── HTTP / Scraping ───────────────────────────────────────────────────────────
+httpx==0.28.1
+beautifulsoup4==4.12.3
+lxml==5.3.0
+fake-useragent==2.0.3
+
+# ── Scheduling ────────────────────────────────────────────────────────────────
+apscheduler==3.10.4
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+pyyaml==6.0.2
+tenacity==9.0.0
+structlog==24.4.0
+
+# ── Redis (request cap / cooldown state) ─────────────────────────────────────
+redis==5.2.1
+hiredis==3.1.0
+
+# ── Monitoring ────────────────────────────────────────────────────────────────
+prometheus-fastapi-instrumentator==7.0.0
+opentelemetry-sdk==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-sqlalchemy==0.50b0
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-httpx==0.35.0
+respx==0.21.1
+factory-boy==3.3.1
+faker==33.1.0
+pytest-cov==6.0.0
+
+# ── Dev / Lint ────────────────────────────────────────────────────────────────
+black==24.10.0
+ruff==0.9.1
+mypy==1.13.0
