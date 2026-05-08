@@ -91,10 +91,13 @@ class IngestionService:
         }
         error_detail: Optional[str] = None
         final_status = IngestionStatus.COMPLETED
+        cursor_page = await self._logs.get_cursor(source)
+        log.info("ingestion.cursor", run_id=run_id, start_page=cursor_page)
+        next_cursor: int = 0
 
         try:
             async with AntiBanHTTPClient() as client:
-                await self._paginate(client, source, stats)
+                next_cursor = await self._paginate(client, source, stats, start_page=cursor_page)
         except DailyCap as exc:
             log.warning("ingestion.daily_cap", error=str(exc))
             final_status = IngestionStatus.COMPLETED  # not a failure, just a limit
@@ -117,6 +120,7 @@ class IngestionService:
                 log_entry.id,
                 status=final_status,
                 error_detail=error_detail,
+                metadata={"next_page": next_cursor},
                 **stats,
             )
             await self._session.commit()
@@ -132,17 +136,21 @@ class IngestionService:
     # ── Pagination ────────────────────────────────────────────────────────────
 
     async def _paginate(
-        self, client: AntiBanHTTPClient, source: str, stats: dict
-    ) -> None:
+        self, client: AntiBanHTTPClient, source: str, stats: dict, start_page: int = 0
+    ) -> int:
+        """Paginate from start_page up to max_pages_per_run pages.
+
+        Returns the next page cursor (0 when the dataset end was reached).
+        """
         src_cfg = self._yaml_cfg["ingestion"]["sources"].get(source)
         if not src_cfg or not src_cfg.get("enabled", False):
             log.warning("ingestion.source_disabled", source=source)
-            return
+            return 0
 
         base_url = src_cfg["base_url"]
         search_path = src_cfg["search_path"]
-        max_pages = src_cfg.get("max_pages_per_run", 5)
-        page_size = src_cfg.get("api_page_size", 10)
+        max_pages = src_cfg.get("max_pages_per_run", 40)
+        page_size = src_cfg.get("api_page_size", 20)
         api_body = src_cfg.get("api_body", {
             "tipoLotto": "IMMOBILI",
             "categoriaBene": [],
@@ -152,9 +160,10 @@ class IngestionService:
         })
 
         url = f"{base_url}{search_path}"
-        page = 0
+        page = start_page
+        end_page = start_page + max_pages
 
-        while page < max_pages:
+        while page < end_page:
             params = {
                 "language": "it",
                 "page": page,
@@ -174,10 +183,13 @@ class IngestionService:
                 await self._process_record(client, record, stats)
 
             if is_last_page(data) or not records:
-                log.info("ingestion.last_page", page=page)
-                break
+                log.info("ingestion.dataset_complete", last_page=page)
+                return 0  # reset cursor — next run starts from the beginning
 
             page += 1
+
+        log.info("ingestion.run_limit_reached", next_page=page)
+        return page  # resume here next run
 
     # ── Record processing ─────────────────────────────────────────────────────
 
@@ -189,7 +201,7 @@ class IngestionService:
         external_id = prop_data["external_id"]
 
         try:
-            prop, prop_created = await self._props.upsert(prop_data)
+            prop, _ = await self._props.upsert(prop_data)
             auction_data["property_id"] = prop.id
 
             auction, auction_created = await self._auctions.upsert(auction_data)

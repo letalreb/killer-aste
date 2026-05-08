@@ -251,3 +251,21 @@ class IngestionLogRepository:
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+    async def get_cursor(self, source: str) -> int:
+        """Return the page number where the last run stopped (0 = start from beginning)."""
+        result = await self._session.execute(
+            select(IngestionLog)
+            .where(
+                IngestionLog.source == source,
+                IngestionLog.status.in_(
+                    [IngestionStatus.COMPLETED, IngestionStatus.DRY_RUN]
+                ),
+            )
+            .order_by(IngestionLog.completed_at.desc())
+            .limit(1)
+        )
+        log = result.scalar_one_or_none()
+        if not log or not log.extra:
+            return 0
+        return int(log.extra.get("next_page", 0))

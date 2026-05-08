@@ -14,7 +14,7 @@ ingestion:
       min_delay_seconds: 3.0
       max_delay_seconds: 8.0
       max_concurrent_requests: 1
-      daily_request_cap: 80          # hard ceiling per day
+      daily_request_cap: 200         # hard ceiling per day
       cooldown_on_429_seconds: 1800  # 30 min freeze on rate-limit
       cooldown_on_403_seconds: 3600  # 60 min freeze on access-denied
       think_time_probability: 0.20   # 20% chance of a long human-like pause
@@ -59,14 +59,15 @@ ingestion:
       base_url: "https://pvp.giustizia.it"
       search_path: "/ric-496b258c-986a1b71/ric-ms/ricerca/vendite"
       enabled: true
-      max_pages_per_run: 5
-      api_page_size: 10
+      max_pages_per_run: 40
+      api_page_size: 20
       api_body:
         tipoLotto: "IMMOBILI"
         categoriaBene: []
         flagRicerca: 0
         coordIndirizzo: ""
         raggioIndirizzo: "25"
+        dataVenditaDa: "2026-01-01"
 
 # ─────────────────────────────────────────────
 #  ROI ENGINE DEFAULTS
