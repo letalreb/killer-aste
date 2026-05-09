@@ -1,29 +1,29 @@
 services:
   # ── Frontend (Static Site) ─────────────────────────────────────────────────
-  - type: web
-    name: killeraste-frontend
-    runtime: static
-    rootDir: frontend
-    buildCommand: npm install --legacy-peer-deps && npm run build
-    staticPublishPath: dist
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: no-cache
-      - path: /*
-        name: Cross-Origin-Opener-Policy
-        value: same-origin-allow-popups
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: VITE_API_URL
-        value: https://killeraste.onrender.com
-      - key: VITE_SKIP_AUTH
-        value: "true"
-      # Set manually in Render dashboard:
-      # VITE_GOOGLE_CLIENT_ID
+  # - type: web
+  #   name: killeraste-frontend
+  #   runtime: static
+  #   rootDir: frontend
+  #   buildCommand: npm install --legacy-peer-deps && npm run build
+  #   staticPublishPath: dist
+  #   headers:
+  #     - path: /*
+  #       name: Cache-Control
+  #       value: no-cache
+  #     - path: /*
+  #       name: Cross-Origin-Opener-Policy
+  #       value: same-origin-allow-popups
+  #   routes:
+  #     - type: rewrite
+  #       source: /*
+  #       destination: /index.html
+  #   envVars:
+  #     - key: VITE_API_URL
+  #       value: https://killeraste.onrender.com
+  #     - key: VITE_SKIP_AUTH
+  #       value: "false"
+  #     # Set manually in Render dashboard:
+  #     # VITE_GOOGLE_CLIENT_ID
 
   # ── Backend (Python/FastAPI) ───────────────────────────────────────────────
   - type: web

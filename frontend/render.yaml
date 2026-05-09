@@ -1,0 +1,39 @@
+# Exported from Render on 2026-05-09T13:10:48Z
+version: "1"
+projects:
+- name: My project
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: killer-aste-fe
+      runtime: static
+      repo: https://github.com/letalreb/killer-aste
+      envVars:
+      # Set manually in Render dashboard:
+      # VITE_GOOGLE_CLIENT_ID
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
+      - key: VITE_API_URL
+        value: https://killeraste.onrender.com
+      - key: VITE_SKIP_AUTH
+        value: "false"
+      buildCommand: npm install --legacy-peer-deps && npm run build
+      staticPublishPath: dist
+      headers:
+      - path: /*
+        name: Cross-Origin-Opener-Policy
+        value: same-origin-allow-popups
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+      autoDeployTrigger: commit
+      buildFilter:
+        ignoredPaths:
+        - app/**
+      routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+      rootDir: frontend
+
