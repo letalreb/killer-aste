@@ -9,10 +9,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from jose import JWTError, jwk, jwt
 from pydantic import BaseModel
 
 from app.config.settings import get_settings
@@ -87,6 +88,38 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
 
 
+_GOOGLE_CERTS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+
+
+async def _verify_google_id_token(token: str, client_id: str) -> dict:
+    """Verify a Google ID token using httpx + python-jose (no requests dependency)."""
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(_GOOGLE_CERTS_URL)
+        resp.raise_for_status()
+        certs = resp.json()
+
+    header = jwt.get_unverified_header(token)
+    kid = header.get("kid")
+    alg = header.get("alg", "RS256")
+
+    key_data = next((k for k in certs["keys"] if k.get("kid") == kid), None)
+    if key_data is None:
+        raise ValueError(f"No matching public key for kid={kid}")
+
+    public_key = jwk.construct(key_data, algorithm=alg)
+    claims = jwt.decode(
+        token,
+        public_key,
+        algorithms=[alg],
+        audience=client_id,
+        options={"verify_exp": True},
+    )
+    issuer = claims.get("iss", "")
+    if issuer not in ("https://accounts.google.com", "accounts.google.com"):
+        raise ValueError(f"Invalid issuer: {issuer}")
+    return claims
+
+
 @router.post("/google", response_model=TokenResponse)
 async def google_login(
     request: Request,
@@ -95,14 +128,7 @@ async def google_login(
 ) -> TokenResponse:
     settings = get_settings()
     try:
-        from google.oauth2 import id_token  # type: ignore[import-untyped]
-        from google.auth.transport import requests as google_requests  # type: ignore[import-untyped]
-
-        idinfo = id_token.verify_oauth2_token(
-            body.token,
-            google_requests.Request(),
-            settings.google_client_id,
-        )
+        idinfo = await _verify_google_id_token(body.token, settings.google_client_id)
     except Exception as exc:
         log.warning("auth.google_token_invalid", error=str(exc))
         raise HTTPException(status_code=401, detail="Invalid Google token") from exc

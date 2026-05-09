@@ -62,6 +62,10 @@ migrate-sql:   ## Print SQL for next migration (dry-run)
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
 
+migrate-sql-remote: ## Print SQL for next migration on remote DB (dry-run)
+	@export $(grep -v '^#' .prod.env | grep DATABASE_SYNC_URL | xargs) && alembic upgrade head --sql
+
+
 dev-remote:    ## Run backend locally connected to the remote Neon DB (reads .prod.env)
 	@echo "Starting backend with remote DB (development mode)..."
 	@DATABASE_URL=$$(grep '^DATABASE_URL' .prod.env | cut -d= -f2-) \
