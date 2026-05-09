@@ -10,17 +10,17 @@ const DEV_USER = {
   email: 'dev@local',
   name: 'Dev User',
   picture: undefined,
-  role: 'standard' as const,
+  role: 'admin' as const,
   max_favorites: 3,
 }
 
-export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+export function ProtectedRoute({ children }: { readonly children: React.ReactNode }) {
   const { token, user, setAuth } = useAuthStore()
   const setMaxFavorites = useFavoritesStore((s) => s.setMaxFavorites)
 
   useEffect(() => {
-    if (SKIP_AUTH && !token) setAuth('dev-token', DEV_USER)
-  }, [token, setAuth])
+    if (SKIP_AUTH) setAuth('dev-token', DEV_USER)
+  }, [setAuth])
 
   useEffect(() => {
     if (user?.max_favorites) setMaxFavorites(user.max_favorites)

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 
 function TierBadge({ role }: { readonly role: string }) {
@@ -41,6 +42,14 @@ export function Header() {
 
       <div className="flex items-center gap-3">
         {user?.role && <TierBadge role={user.role} />}
+        {user?.role === 'admin' && (
+          <Link
+            to="/admin"
+            className="hidden sm:inline text-xs px-2 py-1 rounded border border-purple-500/40 text-purple-400 hover:bg-purple-500/10 transition-colors"
+          >
+            Admin
+          </Link>
+        )}
         {user?.picture ? (
           <img
             src={user.picture}

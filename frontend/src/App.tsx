@@ -3,7 +3,9 @@ import { GoogleOAuthProvider } from '@react-oauth/google'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { AuctionDetailPage } from './pages/AuctionDetailPage'
+import { AdminPage } from './pages/admin/AdminPage'
 import { ProtectedRoute } from './auth/ProtectedRoute'
+import { AdminRoute } from './auth/AdminRoute'
 import { FavoritesBar } from './components/FavoritesBar'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
@@ -28,6 +30,14 @@ export default function App() {
               <ProtectedRoute>
                 <AuctionDetailPage />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminPage />
+              </AdminRoute>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />

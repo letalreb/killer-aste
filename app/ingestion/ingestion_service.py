@@ -33,6 +33,7 @@ from app.db.repository import (
     RiskFlagRepository,
     ValuationRepository,
 )
+from app.ingestion.cancellation import consume, is_cancel_requested
 from app.ingestion.http_client import (
     AntiBanHTTPClient,
     AccessDenied,
@@ -43,6 +44,10 @@ from app.ingestion.parser import is_last_page, parse_api_response
 from app.ingestion.pvp_detail import fetch_detail
 
 log = structlog.get_logger(__name__)
+
+
+class _CancelledByAdmin(Exception):
+    pass
 
 
 class IngestionService:
@@ -98,7 +103,11 @@ class IngestionService:
 
         try:
             async with AntiBanHTTPClient() as client:
-                next_cursor = await self._paginate(client, source, stats, start_page=cursor_page)
+                next_cursor = await self._paginate(client, source, stats, start_page=cursor_page, run_id=run_id)
+        except _CancelledByAdmin as exc:
+            log.warning("ingestion.cancelled", run_id=run_id, error=str(exc))
+            final_status = IngestionStatus.FAILED
+            error_detail = str(exc)
         except DailyCap as exc:
             log.warning("ingestion.daily_cap", error=str(exc))
             final_status = IngestionStatus.COMPLETED  # not a failure, just a limit
@@ -137,7 +146,7 @@ class IngestionService:
     # ── Pagination ────────────────────────────────────────────────────────────
 
     async def _paginate(
-        self, client: AntiBanHTTPClient, source: str, stats: dict, start_page: int = 0
+        self, client: AntiBanHTTPClient, source: str, stats: dict, start_page: int = 0, run_id: str = ""
     ) -> int:
         """Paginate from start_page up to max_pages_per_run pages.
 
@@ -165,35 +174,15 @@ class IngestionService:
         end_page = start_page + max_pages
 
         while page < end_page:
-            params = {
-                "language": "it",
-                "page": page,
-                "size": page_size,
-                "sort": ["dataOraVendita,desc", "citta,asc"],
-            }
-            log.info("ingestion.fetching_page", page=page, url=url)
-            response = await client.post(url, json=api_body, params=params)
-            stats["requests_made"] += 1
-            stats["pages_fetched"] += 1
-
-            data = response.json()
-            records = parse_api_response(data)
-            stats["records_found"] += len(records)
-
-            for record in records:
-                await self._process_record(client, record, stats)
+            self._check_cancel(run_id, page)
+            data, records = await self._fetch_page(client, url, api_body, page, page_size, stats)
+            await self._process_page_records(client, records, stats, run_id, page)
 
             if is_last_page(data) or not records:
                 log.info("ingestion.dataset_complete", last_page=page)
                 return 0
 
-            # Sorted desc: stop as soon as the whole page is in the past.
-            today = date.today()
-            all_past = all(
-                (r["auction_data"].get("auction_date") or datetime.min).date() < today
-                for r in records
-            )
-            if all_past:
+            if self._all_past(records):
                 log.info("ingestion.reached_past_auctions", page=page)
                 return 0
 
