@@ -6,25 +6,66 @@ interface Props {
 }
 
 const SORT_OPTIONS: { value: FilterState['sortBy']; label: string }[] = [
-  { value: 'roi', label: 'ROI %' },
+  { value: 'date',  label: 'Data asta' },
+  { value: 'roi',   label: 'ROI %' },
   { value: 'score', label: 'Punteggio' },
-  { value: 'date', label: 'Data asta' },
   { value: 'price', label: 'Prezzo' },
 ]
 
 const RISK_OPTIONS: { value: FilterState['riskLevel']; label: string }[] = [
-  { value: 'all', label: 'Tutti' },
-  { value: 'low', label: 'Basso' },
+  { value: 'all',    label: 'Tutti' },
+  { value: 'low',    label: 'Basso' },
   { value: 'medium', label: 'Medio' },
-  { value: 'high', label: 'Alto' },
+  { value: 'high',   label: 'Alto' },
+]
+
+const PERIOD_OPTIONS: { days: number | null; label: string }[] = [
+  { days: 7,    label: '7 gg' },
+  { days: 30,   label: '30 gg' },
+  { days: 90,   label: '3 mesi' },
+  { days: 365,  label: '1 anno' },
+  { days: null, label: 'Tutte' },
 ]
 
 export function FilterPanel({ filters, onChange }: Props) {
   const set = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
     onChange({ ...filters, [key]: value })
 
+  const setPeriod = (days: number | null) => {
+    if (days === null) {
+      onChange({ ...filters, showPast: true, daysAhead: 30 })
+    } else {
+      onChange({ ...filters, showPast: false, daysAhead: days })
+    }
+  }
+
+  const activePeriod = filters.showPast ? null : filters.daysAhead
+
   return (
     <aside className="w-full lg:w-60 flex-shrink-0 space-y-5">
+
+      {/* Periodo */}
+      <div>
+        <span className="filter-label">Periodo</span>
+        <div className="grid grid-cols-3 gap-1 mt-1" role="group" aria-label="Periodo">
+          {PERIOD_OPTIONS.map((o) => (
+            <button
+              key={o.label}
+              onClick={() => setPeriod(o.days)}
+              aria-pressed={activePeriod === o.days}
+              className={`px-2 py-1.5 text-xs rounded border transition-colors ${
+                activePeriod === o.days
+                  ? 'bg-emerald-700/30 border-emerald-600 text-emerald-300'
+                  : 'border-surface-border text-slate-400 hover:text-slate-200 hover:border-slate-600'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Ordina per */}
       <div>
         <span className="filter-label">Ordina per</span>
         <div className="grid grid-cols-2 gap-1 mt-1" role="group" aria-label="Ordina per">
@@ -45,6 +86,7 @@ export function FilterPanel({ filters, onChange }: Props) {
         </div>
       </div>
 
+      {/* Rischio */}
       <div>
         <span className="filter-label">Rischio massimo</span>
         <div className="grid grid-cols-2 gap-1 mt-1" role="group" aria-label="Rischio massimo">
@@ -65,6 +107,7 @@ export function FilterPanel({ filters, onChange }: Props) {
         </div>
       </div>
 
+      {/* ROI minimo */}
       <div>
         <label htmlFor="filter-roi" className="filter-label">
           ROI minimo ({filters.minRoi}%)
@@ -85,6 +128,7 @@ export function FilterPanel({ filters, onChange }: Props) {
         </div>
       </div>
 
+      {/* Città / Provincia */}
       <div>
         <label htmlFor="filter-city" className="filter-label">
           Città / Provincia
@@ -99,6 +143,7 @@ export function FilterPanel({ filters, onChange }: Props) {
         />
       </div>
 
+      {/* Prezzo max */}
       <div>
         <label htmlFor="filter-price" className="filter-label">
           Prezzo max (€)
@@ -112,18 +157,6 @@ export function FilterPanel({ filters, onChange }: Props) {
           className="mt-1 w-full bg-surface-card border border-surface-border rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-700"
         />
       </div>
-
-      <label className="flex items-center gap-2 cursor-pointer select-none group">
-        <input
-          type="checkbox"
-          checked={filters.showPast}
-          onChange={(e) => set('showPast', e.target.checked)}
-          className="w-3.5 h-3.5 accent-emerald-500 rounded"
-        />
-        <span className="text-xs text-slate-400 group-hover:text-slate-200 transition-colors">
-          Mostra date passate
-        </span>
-      </label>
     </aside>
   )
 }

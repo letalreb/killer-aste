@@ -95,4 +95,5 @@ export interface FilterState {
   maxPrice: number
   sortBy: 'roi' | 'date' | 'price' | 'score'
   showPast: boolean
+  daysAhead: number
 }

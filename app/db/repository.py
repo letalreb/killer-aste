@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 import structlog
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -129,28 +129,73 @@ class AuctionRepository:
         self,
         status: AuctionStatus = AuctionStatus.SCHEDULED,
         province: Optional[str] = None,
+        city: Optional[str] = None,
         min_roi: Optional[float] = None,
-        limit: int = 50,
+        min_price: Optional[float] = None,
+        max_price: Optional[float] = None,
+        max_risk_grade: Optional[str] = None,
+        sort_by: str = "date",
+        auction_date_from: Optional[datetime] = None,
+        auction_date_to: Optional[datetime] = None,
+        limit: int = 200,
         offset: int = 0,
     ) -> Sequence[Auction]:
         q = (
             select(Auction)
-            .join(Auction.property)
+            .join(Property, Property.id == Auction.property_id)
             .options(
                 selectinload(Auction.property),
                 selectinload(Auction.valuations),
                 selectinload(Auction.risk_flags),
             )
             .where(Auction.status == status)
-            .order_by(Auction.auction_date.asc())
         )
+
         if province:
             q = q.where(Property.province == province.upper())
+        if city:
+            q = q.where(or_(
+                Property.city.ilike(f"%{city}%"),
+                Property.province.ilike(f"%{city}%"),
+            ))
+        if min_price is not None:
+            q = q.where(Auction.base_price >= min_price)
+        if max_price is not None:
+            q = q.where(Auction.base_price <= max_price)
+        if auction_date_from is not None:
+            q = q.where(Auction.auction_date >= auction_date_from)
+        if auction_date_to is not None:
+            q = q.where(Auction.auction_date <= auction_date_to)
+
         if min_roi is not None:
-            q = (
-                q.join(Valuation, Valuation.auction_id == Auction.id)
-                .where(Valuation.roi_percentage >= min_roi)
+            roi_filter_subq = select(Valuation.auction_id).where(
+                Valuation.roi_percentage >= min_roi
             )
+            q = q.where(Auction.id.in_(roi_filter_subq))
+
+        if max_risk_grade and max_risk_grade != "all":
+            threshold = 30.0 if max_risk_grade == "low" else 60.0
+            risk_score_subq = (
+                select(func.coalesce(func.sum(RiskFlag.score_contribution), 0))
+                .where(RiskFlag.auction_id == Auction.id)
+                .scalar_subquery()
+            )
+            q = q.where(risk_score_subq < threshold)
+
+        if sort_by in ("roi", "score"):
+            roi_order_subq = (
+                select(Valuation.roi_percentage)
+                .where(Valuation.auction_id == Auction.id)
+                .order_by(Valuation.created_at.desc())
+                .limit(1)
+                .scalar_subquery()
+            )
+            q = q.order_by(roi_order_subq.desc().nulls_last())
+        elif sort_by == "price":
+            q = q.order_by(Auction.base_price.asc().nulls_last())
+        else:
+            q = q.order_by(Auction.auction_date.asc().nulls_last())
+
         return (await self._session.execute(q.limit(limit).offset(offset))).scalars().all()
 
     async def count_by_status(self) -> dict[str, int]:

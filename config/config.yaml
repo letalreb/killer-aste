@@ -49,6 +49,8 @@ ingestion:
     multiplier: 2.0
     jitter_factor: 0.25   # ±25% randomisation on wait time
 
+  max_run_seconds: 3600               # hard timeout per run (1 hour)
+
   sessions:
     rotate_after_requests: 40         # rotate cookies/session after N requests
     rotate_after_minutes: 45          # or after N minutes, whichever first

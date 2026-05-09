@@ -51,6 +51,31 @@ def _configure_logging() -> None:
 #  Lifespan
 # ─────────────────────────────────────────────────────────────────────────────
 
+async def _recover_stuck_runs() -> None:
+    """Mark any runs still in 'running' state as failed — they were killed mid-flight."""
+    from datetime import datetime, timezone
+    from sqlalchemy import update
+    from app.db.database import AsyncSessionFactory
+    from app.db.models import IngestionLog, IngestionStatus
+
+    log = structlog.get_logger(__name__)
+    async with AsyncSessionFactory() as session:
+        result = await session.execute(
+            update(IngestionLog)
+            .where(IngestionLog.status == IngestionStatus.RUNNING)
+            .values(
+                status=IngestionStatus.FAILED,
+                completed_at=datetime.now(timezone.utc),
+                error_detail="Process killed before completion (dyno restart or crash)",
+            )
+            .returning(IngestionLog.run_id)
+        )
+        recovered = [row[0] for row in result.fetchall()]
+        if recovered:
+            log.warning("startup.recovered_stuck_runs", run_ids=recovered)
+        await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _configure_logging()
@@ -63,6 +88,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         mode=settings.ingestion_mode,
         dry_run=settings.is_dry_run,
     )
+    await _recover_stuck_runs()
     await start_scheduler()
     yield
     log.info("app.shutdown")

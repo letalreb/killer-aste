@@ -7,8 +7,8 @@ interface Chip {
 }
 
 interface Props {
-  filters: FilterState
-  onChange: (f: FilterState) => void
+  readonly filters: FilterState
+  readonly onChange: (f: FilterState) => void
 }
 
 const DEFAULT: FilterState = {
@@ -17,8 +17,9 @@ const DEFAULT: FilterState = {
   city: '',
   minPrice: 0,
   maxPrice: 0,
-  sortBy: 'roi',
+  sortBy: 'date',
   showPast: false,
+  daysAhead: 30,
 }
 
 const RISK_LABELS: Record<string, string> = {
@@ -35,6 +36,7 @@ export function countActiveFilters(filters: FilterState): number {
   if (filters.minPrice > 0) n++
   if (filters.maxPrice > 0) n++
   if (filters.showPast) n++
+  if (filters.daysAhead !== 30) n++
   return n
 }
 
@@ -43,6 +45,19 @@ export function ActiveFilters({ filters, onChange }: Props) {
     onChange({ ...filters, [key]: value })
 
   const chips: Chip[] = []
+
+  if (filters.showPast) {
+    chips.push({ label: 'Incluse date passate', onRemove: () => set('showPast', false) })
+  } else if (filters.daysAhead !== 30) {
+    const label = filters.daysAhead === 7 ? '7 giorni'
+      : filters.daysAhead === 90 ? '3 mesi'
+        : filters.daysAhead === 365 ? '1 anno'
+          : `${filters.daysAhead} giorni`
+    chips.push({
+      label: `Periodo: prossimi ${label}`,
+      onRemove: () => onChange({ ...filters, daysAhead: 30, showPast: false }),
+    })
+  }
 
   if (filters.minRoi > 0)
     chips.push({ label: `ROI ≥ ${filters.minRoi}%`, onRemove: () => set('minRoi', 0) })
@@ -57,19 +72,10 @@ export function ActiveFilters({ filters, onChange }: Props) {
     chips.push({ label: `Città: ${filters.city}`, onRemove: () => set('city', '') })
 
   if (filters.minPrice > 0)
-    chips.push({
-      label: `Min: ${formatCurrency(filters.minPrice)}`,
-      onRemove: () => set('minPrice', 0),
-    })
+    chips.push({ label: `Min: ${formatCurrency(filters.minPrice)}`, onRemove: () => set('minPrice', 0) })
 
   if (filters.maxPrice > 0)
-    chips.push({
-      label: `Max: ${formatCurrency(filters.maxPrice)}`,
-      onRemove: () => set('maxPrice', 0),
-    })
-
-  if (filters.showPast)
-    chips.push({ label: 'Con date passate', onRemove: () => set('showPast', false) })
+    chips.push({ label: `Max: ${formatCurrency(filters.maxPrice)}`, onRemove: () => set('maxPrice', 0) })
 
   if (!chips.length) return null
 

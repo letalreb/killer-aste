@@ -3,15 +3,12 @@ import { Header } from '../components/Header'
 import { KPIBox } from '../components/KPIBox'
 import { AuctionCard } from '../components/AuctionCard'
 import { FilterPanel } from '../components/FilterPanel'
-import { Pagination } from '../components/Pagination'
 import { ActiveFilters, countActiveFilters } from '../components/ActiveFilters'
 import { MapView } from '../components/MapView'
-import { useAuctions, applyFilters } from '../hooks/useAuctions'
+import { useAuctions } from '../hooks/useAuctions'
 import { useFavoritesStore } from '../store/favoritesStore'
 import { formatCurrency, getROI, getOverallScore } from '../utils/formatters'
 import type { FilterState } from '../types/api'
-
-const PAGE_SIZE = 12
 
 const DEFAULT_FILTERS: FilterState = {
   minRoi: 0,
@@ -19,60 +16,60 @@ const DEFAULT_FILTERS: FilterState = {
   city: '',
   minPrice: 0,
   maxPrice: 0,
-  sortBy: 'roi',
+  sortBy: 'date',
   showPast: false,
+  daysAhead: 30,
 }
 
-const SKELETON_IDS = Array.from({ length: PAGE_SIZE }, (_, i) => `skeleton-${i}`)
+const SKELETON_IDS = Array.from({ length: 6 }, (_, i) => `skeleton-${i}`)
 
 type ViewMode = 'cards' | 'map'
 
 export function DashboardPage() {
-  const { allAuctions, loading, error, refresh } = useAuctions()
-  const favoriteItems = useFavoritesStore((s) => s.items)
-  const favoriteIds = useMemo(() => new Set(favoriteItems.map((i) => i.id)), [favoriteItems])
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
-  const [page, setPage] = useState(1)
   const [showFilters, setShowFilters] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('cards')
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false)
-  const gridRef = useRef<HTMLDivElement>(null)
 
-  const setFiltersAndReset = useCallback((f: FilterState) => {
-    setFilters(f)
-    setPage(1)
-  }, [])
+  const { items, loading, loadingMore, hasMore, loadMore, error, refresh } = useAuctions(filters)
 
-  useEffect(() => {
-    if (page > 1) {
-      gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [page])
+  const favoriteItems = useFavoritesStore((s) => s.items)
+  const favoriteIds = useMemo(() => new Set(favoriteItems.map((i) => i.id)), [favoriteItems])
 
-  const auctions = useMemo(() => {
-    const filtered = applyFilters(allAuctions, filters)
-    if (showOnlyFavorites) return filtered.filter((a) => favoriteIds.has(a.id))
-    return filtered
-  }, [allAuctions, filters, showOnlyFavorites, favoriteIds])
-
-  const totalPages = Math.ceil(auctions.length / PAGE_SIZE)
-  const paginatedAuctions = useMemo(
-    () => auctions.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [auctions, page]
+  // Favorites filter applied client-side only (no backend trip needed)
+  const auctions = useMemo(
+    () => showOnlyFavorites ? items.filter((a) => favoriteIds.has(a.id)) : items,
+    [items, showOnlyFavorites, favoriteIds],
   )
 
   const kpis = useMemo(() => {
-    if (allAuctions.length === 0) return null
-    const rois = allAuctions.map((a) => getROI(a)).filter((r): r is number => r != null)
+    if (items.length === 0) return null
+    const rois = items.map((a) => getROI(a)).filter((r): r is number => r != null)
     const avgRoi = rois.length ? rois.reduce((a, b) => a + b, 0) / rois.length : 0
     const bestRoi = rois.length ? Math.max(...rois) : 0
-    const prices = allAuctions
-      .map((a) => Number(a.base_price))
-      .filter((p) => !Number.isNaN(p) && p > 0)
+    const prices = items.map((a) => Number(a.base_price)).filter((p) => !Number.isNaN(p) && p > 0)
     const avgPrice = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : 0
-    const topDeal = [...allAuctions].sort((a, b) => getOverallScore(b) - getOverallScore(a))[0]
+    const topDeal = [...items].sort((a, b) => getOverallScore(b) - getOverallScore(a))[0]
     return { avgRoi, bestRoi, avgPrice, topCity: topDeal?.property?.city ?? '—' }
-  }, [allAuctions])
+  }, [items])
+
+  // ── Infinite scroll sentinel ──────────────────────────────────────────────
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore()
+      },
+      { rootMargin: '200px' },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [loadMore])
+
+  const setFiltersAndReset = useCallback((f: FilterState) => setFilters(f), [])
 
   const activeFilterCount = countActiveFilters(filters)
 
@@ -86,10 +83,11 @@ export function DashboardPage() {
         {kpis && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             <KPIBox
-              label="Aste disponibili"
-              value={auctions.length === allAuctions.length
-                ? allAuctions.length
-                : `${auctions.length} / ${allAuctions.length}`}
+              label="Aste caricate"
+              value={auctions.length === items.length
+                ? items.length
+                : `${auctions.length} / ${items.length}`}
+              sub={hasMore && !showOnlyFavorites ? 'Scorri per caricare altre' : undefined}
               accent="blue"
             />
             <KPIBox label="ROI medio" value={`${kpis.avgRoi.toFixed(1)}%`} accent="green" />
@@ -106,7 +104,7 @@ export function DashboardPage() {
         {/* Layout: sidebar + content */}
         <div className="flex gap-5 items-start">
 
-          {/* Desktop filter sidebar — sticky, hidden in map mode */}
+          {/* Desktop filter sidebar */}
           {viewMode === 'cards' && (
             <div className="hidden lg:block sticky top-16 flex-shrink-0">
               <FilterPanel filters={filters} onChange={setFiltersAndReset} />
@@ -114,10 +112,7 @@ export function DashboardPage() {
           )}
 
           {/* Main column */}
-          <div
-            className={`flex-1 min-w-0 space-y-3 ${viewMode === 'map' ? 'flex flex-col' : ''}`}
-            ref={gridRef}
-          >
+          <div className={`flex-1 min-w-0 space-y-3 ${viewMode === 'map' ? 'flex flex-col' : ''}`}>
 
             {/* Toolbar */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -128,20 +123,17 @@ export function DashboardPage() {
                   <>
                     <span className="font-medium text-slate-300">{auctions.length}</span>
                     <span className="text-slate-500"> aste</span>
-                    {viewMode === 'cards' && totalPages > 1 && (
-                      <span className="text-slate-600 ml-1">
-                        — pagina {page} di {totalPages}
-                      </span>
+                    {hasMore && !showOnlyFavorites && (
+                      <span className="text-slate-600 ml-1">— altri disponibili</span>
                     )}
                   </>
                 )}
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Favourites filter */}
                 {favoriteIds.size > 0 && (
                   <button
-                    onClick={() => { setShowOnlyFavorites((v) => !v); setPage(1) }}
+                    onClick={() => setShowOnlyFavorites((v) => !v)}
                     aria-pressed={showOnlyFavorites}
                     className={`px-2.5 py-1.5 text-xs flex items-center gap-1.5 border rounded-lg transition-colors ${
                       showOnlyFavorites
@@ -157,15 +149,13 @@ export function DashboardPage() {
                   </button>
                 )}
 
-                {/* View toggle — Cards / Map */}
+                {/* View toggle */}
                 <div className="flex items-center border border-surface-border rounded-lg overflow-hidden">
                   <button
                     onClick={() => setViewMode('cards')}
                     aria-pressed={viewMode === 'cards'}
                     className={`px-2.5 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${
-                      viewMode === 'cards'
-                        ? 'bg-emerald-700/30 text-emerald-300'
-                        : 'text-slate-400 hover:text-slate-200'
+                      viewMode === 'cards' ? 'bg-emerald-700/30 text-emerald-300' : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -177,9 +167,7 @@ export function DashboardPage() {
                     onClick={() => setViewMode('map')}
                     aria-pressed={viewMode === 'map'}
                     className={`px-2.5 py-1.5 text-xs flex items-center gap-1.5 transition-colors border-l border-surface-border ${
-                      viewMode === 'map'
-                        ? 'bg-emerald-700/30 text-emerald-300'
-                        : 'text-slate-400 hover:text-slate-200'
+                      viewMode === 'map' ? 'bg-emerald-700/30 text-emerald-300' : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -190,14 +178,13 @@ export function DashboardPage() {
                 </div>
 
                 <button
-                  onClick={() => refresh()}
+                  onClick={refresh}
                   disabled={loading}
                   className="text-xs text-slate-500 hover:text-slate-300 px-2.5 py-1.5 border border-surface-border rounded-lg hover:border-slate-600 transition-colors disabled:opacity-40"
                 >
                   ↻ Aggiorna
                 </button>
 
-                {/* Mobile filter button with badge */}
                 <button
                   onClick={() => setShowFilters(true)}
                   className="lg:hidden relative text-xs text-slate-300 px-2.5 py-1.5 border border-surface-border rounded-lg hover:border-slate-500 transition-colors flex items-center gap-1.5"
@@ -215,7 +202,6 @@ export function DashboardPage() {
               </div>
             </div>
 
-            {/* Active filter chips */}
             <ActiveFilters filters={filters} onChange={setFiltersAndReset} />
 
             {/* Error */}
@@ -223,10 +209,7 @@ export function DashboardPage() {
               <div className="rounded-xl border border-red-800/50 bg-red-900/20 px-4 py-3 text-red-400 text-sm flex items-center gap-2">
                 <span>⚠</span>
                 <span>{error}</span>
-                <button
-                  onClick={() => refresh()}
-                  className="ml-auto text-xs underline opacity-70 hover:opacity-100"
-                >
+                <button onClick={refresh} className="ml-auto text-xs underline opacity-70 hover:opacity-100">
                   Riprova
                 </button>
               </div>
@@ -265,33 +248,40 @@ export function DashboardPage() {
               </div>
             )}
 
-            {/* ── Map view ────────────────────────────────────────────────────── */}
+            {/* Map view */}
             {!loading && viewMode === 'map' && auctions.length > 0 && (
               <div className="h-[calc(100vh-280px)] min-h-[480px] flex">
                 <MapView auctions={auctions} />
               </div>
             )}
 
-            {/* ── Cards view ──────────────────────────────────────────────────── */}
-            {!loading && viewMode === 'cards' && paginatedAuctions.length > 0 && (
+            {/* Cards + infinite scroll */}
+            {viewMode === 'cards' && auctions.length > 0 && (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {paginatedAuctions.map((a, i) => (
-                    <AuctionCard
-                      key={a.id}
-                      auction={a}
-                      rank={(page - 1) * PAGE_SIZE + i + 1}
-                    />
+                  {auctions.map((a, i) => (
+                    <AuctionCard key={a.id} auction={a} rank={i + 1} />
                   ))}
                 </div>
 
-                <Pagination
-                  page={page}
-                  totalPages={totalPages}
-                  totalItems={auctions.length}
-                  pageSize={PAGE_SIZE}
-                  onPageChange={setPage}
-                />
+                {/* Sentinel — triggers loadMore via IntersectionObserver */}
+                {!showOnlyFavorites && (
+                  <div ref={sentinelRef} className="h-1" />
+                )}
+
+                {/* Spinner while fetching next page */}
+                {loadingMore && (
+                  <div className="flex justify-center py-6">
+                    <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
+
+                {/* End-of-list message */}
+                {!hasMore && !loadingMore && items.length > 0 && !showOnlyFavorites && (
+                  <p className="text-center text-xs text-slate-600 py-4">
+                    Tutte le {items.length} aste caricate
+                  </p>
+                )}
               </>
             )}
           </div>
@@ -318,10 +308,7 @@ export function DashboardPage() {
                   <span className="ml-2 text-xs text-emerald-400">({activeFilterCount} attivi)</span>
                 )}
               </span>
-              <button
-                onClick={() => setShowFilters(false)}
-                className="text-slate-500 hover:text-slate-200 transition-colors p-1"
-              >
+              <button onClick={() => setShowFilters(false)} className="text-slate-500 hover:text-slate-200 transition-colors p-1">
                 ✕
               </button>
             </div>

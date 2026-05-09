@@ -1,93 +1,87 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { auctionsApi, type AuctionFilters } from '../api/auctions'
 import type { Auction, FilterState } from '../types/api'
-import { getROI, getRiskGrade, getRiskScore, getOverallScore } from '../utils/formatters'
 
-export function useAuctions() {
-  const [allAuctions, setAllAuctions] = useState<Auction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+const PAGE_SIZE = 200
 
-  const fetch = useCallback(async (filters?: AuctionFilters) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await auctionsApi.list(filters)
-      setAllAuctions(data)
-    } catch (e) {
-      setError('Impossibile caricare le aste. Riprova.')
-      console.error(e)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetch()
-  }, [fetch])
-
-  return { allAuctions, loading, error, refresh: fetch }
+function toApiFilters(f: FilterState, page: number): AuctionFilters {
+  return {
+    min_roi: f.minRoi > 0 ? f.minRoi : undefined,
+    max_risk_grade: f.riskLevel !== 'all' ? f.riskLevel : undefined,
+    city: f.city || undefined,
+    min_price: f.minPrice > 0 ? f.minPrice : undefined,
+    max_price: f.maxPrice > 0 ? f.maxPrice : undefined,
+    sort_by: f.sortBy === 'score' ? 'roi' : f.sortBy,
+    show_past: f.showPast ? true : undefined,
+    days_ahead: f.showPast ? undefined : f.daysAhead,
+    page,
+    page_size: PAGE_SIZE,
+  }
 }
 
-export function applyFilters(auctions: Auction[], filters: FilterState): Auction[] {
-  let result = [...auctions]
+export function useAuctions(filters: FilterState) {
+  const [items, setItems] = useState<Auction[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  if (!filters.showPast) {
-    const now = new Date()
-    result = result.filter((a) => {
-      if (!a.auction_date) return true
-      return new Date(a.auction_date) >= now
-    })
-  }
+  const pageRef = useRef(1)
+  const filtersRef = useRef(filters)
+  filtersRef.current = filters
 
-  if (filters.minRoi > 0) {
-    result = result.filter((a) => (getROI(a) ?? 0) >= filters.minRoi)
-  }
+  const filtersKey = JSON.stringify(filters)
 
-  if (filters.riskLevel !== 'all') {
-    result = result.filter((a) => {
-      const grade = getRiskGrade(getRiskScore(a))
-      if (filters.riskLevel === 'low') return grade === 'low'
-      if (filters.riskLevel === 'medium') return grade === 'low' || grade === 'medium'
-      if (filters.riskLevel === 'high') return true
-      return true
-    })
-  }
+  useEffect(() => {
+    pageRef.current = 1
+    setItems([])
+    setHasMore(true)
+    setError(null)
+    setLoading(true)
 
-  if (filters.city) {
-    const q = filters.city.toLowerCase()
-    result = result.filter(
-      (a) =>
-        a.property?.city?.toLowerCase().includes(q) ||
-        a.property?.province?.toLowerCase().includes(q)
-    )
-  }
+    auctionsApi
+      .list(toApiFilters(filtersRef.current, 1))
+      .then((data) => {
+        setItems(data)
+        setHasMore(data.length === PAGE_SIZE)
+      })
+      .catch(() => setError('Impossibile caricare le aste. Riprova.'))
+      .finally(() => setLoading(false))
+  // filtersKey is the stable serialized representation of filters
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey])
 
-  if (filters.minPrice > 0) {
-    result = result.filter((a) => (a.base_price ?? 0) >= filters.minPrice)
-  }
-
-  if (filters.maxPrice > 0) {
-    result = result.filter((a) => (a.base_price ?? 0) <= filters.maxPrice)
-  }
-
-  result.sort((a, b) => {
-    switch (filters.sortBy) {
-      case 'roi':
-        return (getROI(b) ?? -Infinity) - (getROI(a) ?? -Infinity)
-      case 'score':
-        return getOverallScore(b) - getOverallScore(a)
-      case 'price':
-        return (a.base_price ?? 0) - (b.base_price ?? 0)
-      case 'date': {
-        const da = a.auction_date ? new Date(a.auction_date).getTime() : Infinity
-        const db = b.auction_date ? new Date(b.auction_date).getTime() : Infinity
-        return da - db
-      }
-      default:
-        return 0
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return
+    const nextPage = pageRef.current + 1
+    setLoadingMore(true)
+    try {
+      const data = await auctionsApi.list(toApiFilters(filtersRef.current, nextPage))
+      setItems((prev) => [...prev, ...data])
+      setHasMore(data.length === PAGE_SIZE)
+      pageRef.current = nextPage
+    } catch {
+      setError('Errore nel caricamento di ulteriori aste.')
+    } finally {
+      setLoadingMore(false)
     }
-  })
+  }, [loadingMore, hasMore])
 
-  return result
+  const refresh = useCallback(() => {
+    pageRef.current = 1
+    setItems([])
+    setHasMore(true)
+    setError(null)
+    setLoading(true)
+    auctionsApi
+      .list(toApiFilters(filtersRef.current, 1))
+      .then((data) => {
+        setItems(data)
+        setHasMore(data.length === PAGE_SIZE)
+      })
+      .catch(() => setError('Impossibile caricare le aste. Riprova.'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  return { items, loading, loadingMore, hasMore, loadMore, error, refresh }
 }

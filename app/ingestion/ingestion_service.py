@@ -15,6 +15,7 @@ Flow
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, date, timezone
 from typing import Optional
@@ -97,13 +98,22 @@ class IngestionService:
         }
         error_detail: Optional[str] = None
         final_status = IngestionStatus.COMPLETED
-        cursor_page = await self._logs.get_cursor(source)
-        log.info("ingestion.cursor", run_id=run_id, start_page=cursor_page)
         next_cursor: int = 0
 
+        run_timeout = self._yaml_cfg["ingestion"].get("max_run_seconds", 3600)
+
         try:
+            cursor_page = await self._logs.get_cursor(source)
+            log.info("ingestion.cursor", run_id=run_id, start_page=cursor_page)
             async with AntiBanHTTPClient() as client:
-                next_cursor = await self._paginate(client, source, stats, start_page=cursor_page, run_id=run_id)
+                next_cursor = await asyncio.wait_for(
+                    self._paginate(client, source, stats, start_page=cursor_page, run_id=run_id),
+                    timeout=float(run_timeout),
+                )
+        except asyncio.TimeoutError:
+            log.warning("ingestion.timeout", run_id=run_id, timeout_seconds=run_timeout)
+            final_status = IngestionStatus.FAILED
+            error_detail = f"Run exceeded maximum duration of {run_timeout // 60} minutes"
         except _CancelledByAdmin as exc:
             log.warning("ingestion.cancelled", run_id=run_id, error=str(exc))
             final_status = IngestionStatus.FAILED
@@ -214,7 +224,11 @@ class IngestionService:
             "sort": ["dataOraVendita,desc", "citta,asc"],
         }
         log.info("ingestion.fetching_page", page=page, url=url)
-        response = await client.post(url, json=api_body, params=params)
+        try:
+            response = await client.post(url, json=api_body, params=params)
+        except (RateLimited, AccessDenied):
+            stats["requests_made"] += 1  # request was sent; server rejected it
+            raise
         stats["requests_made"] += 1
         stats["pages_fetched"] += 1
         data = response.json()
