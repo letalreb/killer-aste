@@ -54,20 +54,24 @@ export function DashboardPage() {
   }, [items])
 
   // ── Infinite scroll sentinel ──────────────────────────────────────────────
-  const sentinelRef = useRef<HTMLDivElement>(null)
+  // Use a ref so the observer callback always sees the latest loadMore without
+  // needing to recreate the observer every time loadMore changes identity.
+  const loadMoreRef = useRef(loadMore)
+  useEffect(() => { loadMoreRef.current = loadMore }, [loadMore])
 
-  useEffect(() => {
-    const el = sentinelRef.current
-    if (!el) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) loadMore()
-      },
+  const observerRef = useRef<IntersectionObserver | null>(null)
+
+  // Callback ref fires whenever the sentinel node mounts or unmounts,
+  // ensuring the observer is attached even though the sentinel starts hidden.
+  const sentinelRef = useCallback((node: HTMLDivElement | null) => {
+    observerRef.current?.disconnect()
+    if (!node) return
+    observerRef.current = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) loadMoreRef.current() },
       { rootMargin: '200px' },
     )
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [loadMore])
+    observerRef.current.observe(node)
+  }, [])
 
   const setFiltersAndReset = useCallback((f: FilterState) => setFilters(f), [])
 
