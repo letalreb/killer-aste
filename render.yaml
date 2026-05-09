@@ -21,7 +21,7 @@ services:
       - key: VITE_API_URL
         value: https://killeraste.onrender.com
       - key: VITE_SKIP_AUTH
-        value: "false"
+        value: "true"
       # Set manually in Render dashboard:
       # VITE_GOOGLE_CLIENT_ID
 
