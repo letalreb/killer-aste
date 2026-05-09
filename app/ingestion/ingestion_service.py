@@ -191,6 +191,57 @@ class IngestionService:
         log.info("ingestion.run_limit_reached", next_page=page)
         return page  # resume here next run
 
+    # ── Pagination helpers ────────────────────────────────────────────────────
+
+    def _check_cancel(self, run_id: str, page: int) -> None:
+        if run_id and is_cancel_requested(run_id):
+            consume(run_id)
+            raise _CancelledByAdmin(f"Cancelled by admin at page {page}")
+
+    async def _fetch_page(
+        self,
+        client: AntiBanHTTPClient,
+        url: str,
+        api_body: dict,
+        page: int,
+        page_size: int,
+        stats: dict,
+    ) -> tuple[dict, list]:
+        params = {
+            "language": "it",
+            "page": page,
+            "size": page_size,
+            "sort": ["dataOraVendita,desc", "citta,asc"],
+        }
+        log.info("ingestion.fetching_page", page=page, url=url)
+        response = await client.post(url, json=api_body, params=params)
+        stats["requests_made"] += 1
+        stats["pages_fetched"] += 1
+        data = response.json()
+        records = parse_api_response(data)
+        stats["records_found"] += len(records)
+        return data, records
+
+    async def _process_page_records(
+        self,
+        client: AntiBanHTTPClient,
+        records: list,
+        stats: dict,
+        run_id: str,
+        page: int,
+    ) -> None:
+        for record in records:
+            self._check_cancel(run_id, page)
+            await self._process_record(client, record, stats)
+
+    @staticmethod
+    def _all_past(records: list) -> bool:
+        today = date.today()
+        return all(
+            (r["auction_data"].get("auction_date") or datetime.min).date() < today
+            for r in records
+        )
+
     # ── Record processing ─────────────────────────────────────────────────────
 
     async def _process_record(
