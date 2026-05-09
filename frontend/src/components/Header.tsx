@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/authStore'
 function TierBadge({ role }: { readonly role: string }) {
   if (role === 'admin') {
     return (
-      <span className="hidden sm:inline text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30 uppercase tracking-wider">
+      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30 uppercase tracking-wider">
         Admin
       </span>
     )
@@ -45,7 +45,7 @@ export function Header() {
         {user?.role === 'admin' && (
           <Link
             to="/admin"
-            className="hidden sm:inline text-xs px-2 py-1 rounded border border-purple-500/40 text-purple-400 hover:bg-purple-500/10 transition-colors"
+            className="text-xs px-2 py-1 rounded border border-purple-500/40 text-purple-400 hover:bg-purple-500/10 transition-colors"
           >
             Admin
           </Link>

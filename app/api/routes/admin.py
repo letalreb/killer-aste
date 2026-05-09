@@ -121,6 +121,7 @@ async def get_ingestion_run(
 
 
 def _run_to_dict(r: IngestionLog) -> dict:
+    extra = r.extra or {}
     return {
         "id": str(r.id),
         "run_id": r.run_id,
@@ -133,6 +134,8 @@ def _run_to_dict(r: IngestionLog) -> dict:
         "records_found": r.records_found,
         "records_inserted": r.records_inserted,
         "records_updated": r.records_updated,
+        "properties_inserted": extra.get("properties_inserted", 0),
+        "properties_updated": extra.get("properties_updated", 0),
         "errors_count": r.errors_count,
         "requests_made": r.requests_made,
         "error_detail": r.error_detail,

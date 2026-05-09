@@ -14,6 +14,8 @@ export interface IngestionRun {
   records_found: number
   records_inserted: number
   records_updated: number
+  properties_inserted: number
+  properties_updated: number
   errors_count: number
   requests_made: number
   error_detail: string | null
@@ -59,14 +61,14 @@ const MOCK_RUNS: IngestionRun[] = [
     started_at: new Date(Date.now() - 3600000).toISOString(),
     completed_at: new Date(Date.now() - 3540000).toISOString(),
     pages_fetched: 12, records_found: 240, records_inserted: 18, records_updated: 42,
-    errors_count: 0, requests_made: 14, error_detail: null,
+    properties_inserted: 15, properties_updated: 45, errors_count: 0, requests_made: 14, error_detail: null,
   },
   {
     id: 'mock-2', run_id: 'def67890', source: 'pvp', mode: 'safe', status: 'failed',
     started_at: new Date(Date.now() - 86400000).toISOString(),
     completed_at: new Date(Date.now() - 86350000).toISOString(),
     pages_fetched: 3, records_found: 60, records_inserted: 0, records_updated: 0,
-    errors_count: 5, requests_made: 4, error_detail: 'AccessDenied: rate limit reached',
+    properties_inserted: 0, properties_updated: 0, errors_count: 5, requests_made: 4, error_detail: 'AccessDenied: rate limit reached',
   },
 ]
 

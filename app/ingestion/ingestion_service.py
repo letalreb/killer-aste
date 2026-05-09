@@ -95,6 +95,8 @@ class IngestionService:
             "records_updated": 0,
             "errors_count": 0,
             "requests_made": 0,
+            "properties_inserted": 0,
+            "properties_updated": 0,
         }
         error_detail: Optional[str] = None
         final_status = IngestionStatus.COMPLETED
@@ -136,11 +138,15 @@ class IngestionService:
             if mode == "dry_run":
                 final_status = IngestionStatus.DRY_RUN
 
+            prop_stats = {
+                "properties_inserted": stats.pop("properties_inserted"),
+                "properties_updated": stats.pop("properties_updated"),
+            }
             await self._logs.complete(
                 log_entry.id,
                 status=final_status,
                 error_detail=error_detail,
-                metadata={"next_page": next_cursor},
+                metadata={"next_page": next_cursor, **prop_stats},
                 **stats,
             )
             await self._session.commit()
@@ -266,7 +272,7 @@ class IngestionService:
         external_id = prop_data["external_id"]
 
         try:
-            prop, _ = await self._props.upsert(prop_data)
+            prop, prop_created = await self._props.upsert(prop_data)
             auction_data["property_id"] = prop.id
 
             auction, auction_created = await self._auctions.upsert(auction_data)
@@ -281,6 +287,11 @@ class IngestionService:
                 stats["records_inserted"] += 1
             else:
                 stats["records_updated"] += 1
+
+            if prop_created:
+                stats["properties_inserted"] += 1
+            else:
+                stats["properties_updated"] += 1
 
             await self._compute_analytics(auction, prop)
             await self._session.commit()

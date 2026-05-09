@@ -176,10 +176,13 @@ export function IngestionTab() {
                   <th className="px-4 py-2 text-left font-medium">Status</th>
                   <th className="px-4 py-2 text-left font-medium">Avviata</th>
                   <th className="px-4 py-2 text-right font-medium">Durata</th>
-                  <th className="px-4 py-2 text-right font-medium">Pagine</th>
+                  <th className="px-4 py-2 text-right font-medium">Pag. sc.</th>
+                  <th className="px-4 py-2 text-right font-medium">Richieste</th>
                   <th className="px-4 py-2 text-right font-medium">Trovati</th>
-                  <th className="px-4 py-2 text-right font-medium">Inseriti</th>
-                  <th className="px-4 py-2 text-right font-medium">Aggiornati</th>
+                  <th className="px-3 py-2 text-right font-medium text-emerald-600/70">Aste ins.</th>
+                  <th className="px-3 py-2 text-right font-medium text-sky-600/70">Aste agg.</th>
+                  <th className="px-3 py-2 text-right font-medium text-emerald-600/70">Prop. ins.</th>
+                  <th className="px-3 py-2 text-right font-medium text-sky-600/70">Prop. agg.</th>
                   <th className="px-4 py-2 text-right font-medium">Errori</th>
                   <th className="px-4 py-2" />
                 </tr>
@@ -206,9 +209,12 @@ export function IngestionTab() {
                       <td className="px-4 py-2 text-slate-400">{fmt(r.started_at)}</td>
                       <td className="px-4 py-2 text-right">{durationCell}</td>
                       <td className="px-4 py-2 text-right text-slate-300">{r.pages_fetched}</td>
+                      <td className="px-4 py-2 text-right text-slate-300">{r.requests_made}</td>
                       <td className="px-4 py-2 text-right text-slate-300">{r.records_found}</td>
-                      <td className="px-4 py-2 text-right text-emerald-400 font-medium">{r.records_inserted}</td>
-                      <td className="px-4 py-2 text-right text-sky-400">{r.records_updated}</td>
+                      <td className="px-3 py-2 text-right text-emerald-400 font-medium">{r.records_inserted}</td>
+                      <td className="px-3 py-2 text-right text-sky-400">{r.records_updated}</td>
+                      <td className="px-3 py-2 text-right text-emerald-400 font-medium">{r.properties_inserted}</td>
+                      <td className="px-3 py-2 text-right text-sky-400">{r.properties_updated}</td>
                       <td className="px-4 py-2 text-right">
                         <span className={r.errors_count > 0 ? 'text-red-400 font-medium' : 'text-slate-500'}>
                           {r.errors_count}
