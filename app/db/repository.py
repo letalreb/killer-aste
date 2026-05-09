@@ -300,6 +300,20 @@ class IngestionLogRepository:
             )
         )
 
+    async def flush_stats(self, run_id: str, stats: dict) -> None:
+        """Write in-progress stats to the DB so the admin UI can show live progress."""
+        db_fields = {
+            k: v for k, v in stats.items()
+            if k in ("pages_fetched", "records_found", "records_inserted",
+                     "records_updated", "errors_count", "requests_made")
+        }
+        if db_fields:
+            await self._session.execute(
+                update(IngestionLog)
+                .where(IngestionLog.run_id == run_id)
+                .values(**db_fields)
+            )
+
     async def get_last_successful(self, source: str) -> Optional[IngestionLog]:
         result = await self._session.execute(
             select(IngestionLog)

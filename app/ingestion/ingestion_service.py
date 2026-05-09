@@ -194,6 +194,9 @@ class IngestionService:
             data, records = await self._fetch_page(client, url, api_body, page, page_size, stats)
             await self._process_page_records(client, records, stats, run_id, page)
 
+            await self._logs.flush_stats(run_id, stats)
+            await self._session.commit()
+
             if is_last_page(data) or not records:
                 log.info("ingestion.dataset_complete", last_page=page)
                 return 0
@@ -281,7 +284,7 @@ class IngestionService:
             # This populates the real expert appraisal value and participation link.
             needs_detail = auction_created or not auction.source_url
             if needs_detail and not self._settings.is_dry_run:
-                await self._enrich_from_detail(client, auction, prop, external_id)
+                await self._enrich_from_detail(client, auction, prop, external_id, stats)
 
             if auction_created:
                 stats["records_inserted"] += 1
@@ -306,7 +309,7 @@ class IngestionService:
             stats["errors_count"] += 1
 
     async def _enrich_from_detail(
-        self, client: AntiBanHTTPClient, auction, prop, external_id: str
+        self, client: AntiBanHTTPClient, auction, prop, external_id: str, stats: dict | None = None
     ) -> None:
         """Fetch the PVP detail page and update auction + property in place."""
         src_cfg = self._yaml_cfg["ingestion"]["sources"].get("pvp", {})
@@ -323,6 +326,7 @@ class IngestionService:
                 external_id,
                 detail_api_path=detail_api_path,
                 detail_html_path=detail_html_path,
+                stats=stats,
             )
         except Exception as exc:
             log.warning("ingestion.detail_fetch_error", external_id=external_id, error=str(exc))

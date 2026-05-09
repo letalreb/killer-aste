@@ -92,11 +92,13 @@ async def fetch_detail(
     *,
     detail_api_path: str = "/ric-496b258c-986a1b71/ric-ms/offerta/{id}",
     detail_html_path: str = "/pvp/it/detail_offerta.page",
+    stats: dict | None = None,
 ) -> dict:
     """
     Fetch detail data for one auction.
 
     Always returns a dict (never raises).  Missing fields are None.
+    Increments stats["requests_made"] for every HTTP call attempted.
     """
     source_url = f"{base_url}{detail_html_path}?idOfferta={external_id}"
     result: dict = {
@@ -112,20 +114,28 @@ async def fetch_detail(
     json_url = f"{base_url}{json_path}"
     try:
         resp = await client.get(json_url, params={"language": "it"})
+        if stats is not None:
+            stats["requests_made"] += 1
         if resp.status_code == 200:
             _parse_json_detail(resp.json(), result)
             log.debug("pvp_detail.json_ok", external_id=external_id)
     except Exception as exc:
+        if stats is not None:
+            stats["requests_made"] += 1
         log.debug("pvp_detail.json_failed", external_id=external_id, error=str(exc))
 
     # ── 2. HTML fallback if appraisal still missing ───────────────────────────
     if result["market_value"] is None:
         try:
             resp = await client.get(source_url)
+            if stats is not None:
+                stats["requests_made"] += 1
             if resp.status_code == 200:
                 _parse_html_detail(resp.text, result)
                 log.debug("pvp_detail.html_ok", external_id=external_id)
         except Exception as exc:
+            if stats is not None:
+                stats["requests_made"] += 1
             log.debug("pvp_detail.html_failed", external_id=external_id, error=str(exc))
 
     if result["market_value"] is not None:
