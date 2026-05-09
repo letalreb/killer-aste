@@ -4,25 +4,50 @@ import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
 import { useState } from 'react'
 
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
+
+const ERROR_KEY = 'ka-login-error'
+
+function persistError(msg: string) {
+  sessionStorage.setItem(ERROR_KEY, msg)
+}
+function clearPersistedError() {
+  sessionStorage.removeItem(ERROR_KEY)
+}
+
 export function LoginPage() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(() => sessionStorage.getItem(ERROR_KEY))
   const [loading, setLoading] = useState(false)
+
+  const showError = (msg: string) => {
+    persistError(msg)
+    setError(msg)
+  }
 
   const handleSuccess = async (credential: string) => {
     setLoading(true)
+    clearPersistedError()
     setError(null)
     try {
       const res = await authApi.googleLogin(credential)
       setAuth(res.access_token, res.user)
       navigate('/', { replace: true })
     } catch {
-      setError('Accesso non riuscito. Riprova.')
+      showError('Accesso non riuscito. Riprova.')
     } finally {
       setLoading(false)
     }
   }
+
+  const handleGoogleError = () => {
+    showError(
+      "Login Google non riuscito. Se l'errore persiste, l'origine di questa pagina potrebbe non essere autorizzata nella Google Cloud Console."
+    )
+  }
+
+  const missingClientId = !GOOGLE_CLIENT_ID
 
   return (
     <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-6">
@@ -43,9 +68,22 @@ export function LoginPage() {
             Analizza le migliori aste immobiliari per ROI, rischio e ranking.
           </p>
 
+          {missingClientId && (
+            <div className="mb-4 px-3 py-2 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-400 text-xs">
+              ⚠ <strong>VITE_GOOGLE_CLIENT_ID</strong> non configurato. Il login Google non è disponibile.
+            </div>
+          )}
+
           {error && (
-            <div className="mb-4 px-3 py-2 rounded-lg bg-red-900/30 border border-red-800/50 text-red-400 text-xs">
-              {error}
+            <div className="mb-4 px-3 py-2 rounded-lg bg-red-900/30 border border-red-800/50 text-red-400 text-xs leading-relaxed flex items-start gap-2">
+              <span className="flex-1">{error}</span>
+              <button
+                onClick={() => { clearPersistedError(); setError(null) }}
+                className="flex-shrink-0 text-red-600 hover:text-red-400 leading-none mt-0.5"
+                aria-label="Chiudi"
+              >
+                ✕
+              </button>
             </div>
           )}
 
@@ -59,7 +97,7 @@ export function LoginPage() {
                 onSuccess={(res) => {
                   if (res.credential) handleSuccess(res.credential)
                 }}
-                onError={() => setError('Errore durante il login con Google.')}
+                onError={handleGoogleError}
                 theme="filled_black"
                 shape="rectangular"
                 size="large"

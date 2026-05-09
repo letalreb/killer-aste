@@ -10,6 +10,9 @@ services:
       - path: /*
         name: Cache-Control
         value: no-cache
+      - path: /*
+        name: Cross-Origin-Opener-Policy
+        value: same-origin-allow-popups
     routes:
       - type: rewrite
         source: /*
