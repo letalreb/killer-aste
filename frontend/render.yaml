@@ -17,7 +17,7 @@ projects:
       - key: VITE_API_URL
         value: https://killeraste.onrender.com
       - key: VITE_SKIP_AUTH
-        value: "false"
+        value: "true"
       buildCommand: npm install --legacy-peer-deps && npm run build
       staticPublishPath: dist
       headers:
