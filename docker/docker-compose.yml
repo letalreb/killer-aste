@@ -1,0 +1,89 @@
+version: "3.9"
+
+# ── Production-like local stack ───────────────────────────────────────────────
+# Usage:
+#   cp .env.example .env
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml exec app alembic upgrade head
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: killeraste
+      POSTGRES_USER: killeraste
+      POSTGRES_PASSWORD: killeraste
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U killeraste -d killeraste"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── Migrations (one-shot) ───────────────────────────────────────────────────
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://killeraste:killeraste@db:5432/killeraste
+      DATABASE_SYNC_URL: postgresql://killeraste:killeraste@db:5432/killeraste
+    command: alembic upgrade head
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+
+  # ── Application ─────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://killeraste:killeraste@db:5432/killeraste
+      DATABASE_SYNC_URL: postgresql://killeraste:killeraste@db:5432/killeraste
+      REDIS_URL: redis://redis:6379/0
+      INGESTION_MODE: safe
+      DRY_RUN: "false"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  pg_data:
