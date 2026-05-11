@@ -20,10 +20,13 @@ from sqlalchemy.orm import selectinload
 from app.db.models import (
     Auction,
     AuctionStatus,
+    EnrichmentSignal,
     IngestionLog,
     IngestionStatus,
     LoginAudit,
     Property,
+    PropertyOpportunityLink,
+    PublicOpportunity,
     RiskFlag,
     User,
     UserRole,
@@ -410,3 +413,151 @@ class LoginAuditRepository:
         self._session.add(audit)
         await self._session.flush()
         return audit
+
+
+class PublicOpportunityRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def upsert(self, data: dict) -> tuple[PublicOpportunity, bool]:
+        """Insert or update by (source_url). Returns (opportunity, created)."""
+        source_url = data.get("source_url")
+        if source_url:
+            existing = await self._get_by_source_url(source_url)
+            if existing:
+                for k, v in data.items():
+                    if k not in ("id", "created_at") and v is not None:
+                        setattr(existing, k, v)
+                await self._session.flush()
+                return existing, False
+
+        obj = PublicOpportunity(**data)
+        self._session.add(obj)
+        await self._session.flush()
+        return obj, True
+
+    async def _get_by_source_url(self, source_url: str) -> Optional[PublicOpportunity]:
+        result = await self._session.execute(
+            select(PublicOpportunity).where(PublicOpportunity.source_url == source_url)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_id(self, opp_id: uuid.UUID) -> Optional[PublicOpportunity]:
+        result = await self._session.execute(
+            select(PublicOpportunity).where(PublicOpportunity.id == opp_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def find_by_location(
+        self,
+        province: Optional[str] = None,
+        city: Optional[str] = None,
+        limit: int = 50,
+    ) -> Sequence[PublicOpportunity]:
+        """Return active opportunities matching province and/or city."""
+        from app.db.models import OpportunityStatus
+        q = select(PublicOpportunity).where(
+            PublicOpportunity.status == OpportunityStatus.ACTIVE
+        )
+        if province:
+            q = q.where(PublicOpportunity.province == province.upper())
+        if city:
+            q = q.where(PublicOpportunity.city.ilike(f"%{city}%"))
+        q = q.order_by(PublicOpportunity.updated_at.desc()).limit(limit)
+        return (await self._session.execute(q)).scalars().all()
+
+    async def list_recent(self, limit: int = 100) -> Sequence[PublicOpportunity]:
+        result = await self._session.execute(
+            select(PublicOpportunity)
+            .order_by(PublicOpportunity.created_at.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def link_to_property(
+        self,
+        property_id: uuid.UUID,
+        opportunity_id: uuid.UUID,
+        distance_km: Optional[float] = None,
+        relevance_score: Optional[float] = None,
+    ) -> PropertyOpportunityLink:
+        """Create or refresh the link between a property and an opportunity."""
+        result = await self._session.execute(
+            select(PropertyOpportunityLink).where(
+                PropertyOpportunityLink.property_id == property_id,
+                PropertyOpportunityLink.opportunity_id == opportunity_id,
+            )
+        )
+        link = result.scalar_one_or_none()
+        if link is None:
+            link = PropertyOpportunityLink(
+                property_id=property_id,
+                opportunity_id=opportunity_id,
+                distance_km=distance_km,
+                relevance_score=relevance_score,
+            )
+            self._session.add(link)
+        else:
+            if distance_km is not None:
+                link.distance_km = distance_km
+            if relevance_score is not None:
+                link.relevance_score = relevance_score
+        await self._session.flush()
+        return link
+
+    async def get_linked_opportunities(
+        self, property_id: uuid.UUID
+    ) -> Sequence[PublicOpportunity]:
+        result = await self._session.execute(
+            select(PublicOpportunity)
+            .join(
+                PropertyOpportunityLink,
+                PropertyOpportunityLink.opportunity_id == PublicOpportunity.id,
+            )
+            .where(PropertyOpportunityLink.property_id == property_id)
+            .order_by(PropertyOpportunityLink.relevance_score.desc().nulls_last())
+        )
+        return result.scalars().all()
+
+
+class EnrichmentSignalRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def upsert_for_property(
+        self, property_id: uuid.UUID, signal_type: str, data: dict
+    ) -> EnrichmentSignal:
+        """Create or update a signal of a given type for this property."""
+        result = await self._session.execute(
+            select(EnrichmentSignal).where(
+                EnrichmentSignal.property_id == property_id,
+                EnrichmentSignal.signal_type == signal_type,
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            for k, v in data.items():
+                if k not in ("id", "property_id", "created_at"):
+                    setattr(existing, k, v)
+            await self._session.flush()
+            return existing
+
+        obj = EnrichmentSignal(property_id=property_id, signal_type=signal_type, **data)
+        self._session.add(obj)
+        await self._session.flush()
+        return obj
+
+    async def get_for_property(
+        self, property_id: uuid.UUID
+    ) -> Sequence[EnrichmentSignal]:
+        result = await self._session.execute(
+            select(EnrichmentSignal)
+            .where(EnrichmentSignal.property_id == property_id)
+            .order_by(EnrichmentSignal.signal_type)
+        )
+        return result.scalars().all()
+
+    async def delete_by_property(self, property_id: uuid.UUID) -> None:
+        await self._session.execute(
+            delete(EnrichmentSignal).where(EnrichmentSignal.property_id == property_id)
+        )

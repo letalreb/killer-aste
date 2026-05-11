@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import admin, analytics, auctions, auth, properties
+from app.api.routes import admin, analytics, auctions, auth, enrichment, properties
 from app.api.routes.auth import get_current_user
 from app.config.settings import get_settings
 from app.ingestion.scheduler import start_scheduler, stop_scheduler
@@ -141,6 +141,7 @@ app.include_router(auctions.router, prefix="/api/v1", dependencies=_auth_dep)
 app.include_router(properties.router, prefix="/api/v1", dependencies=_auth_dep)
 app.include_router(analytics.router, prefix="/api/v1", dependencies=_auth_dep)
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(enrichment.router, prefix="/api/v1")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

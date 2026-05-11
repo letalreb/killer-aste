@@ -86,6 +86,25 @@ class UserRole(str, PyEnum):
     ADMIN = "admin"
 
 
+class OpportunityType(str, PyEnum):
+    PIANO_URBANISTICO = "piano_urbanistico"
+    ALIENAZIONE_PUBBLICA = "alienazione_pubblica"
+    RIGENERAZIONE_URBANA = "rigenerazione_urbana"
+    INVESTIMENTO_INFRASTRUTTURALE = "investimento_infrastrutturale"
+    PIANO_RECUPERO = "piano_recupero"
+    PNRR_PROGETTO = "pnrr_progetto"
+    DISMISSIONE_PUBBLICA = "dismissione_pubblica"
+    VALORIZZAZIONE_IMMOBILIARE = "valorizzazione_immobiliare"
+    ALTRO = "altro"
+
+
+class OpportunityStatus(str, PyEnum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
+
+
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -137,6 +156,12 @@ class Property(TimestampMixin, Base):
 
     auctions: Mapped[list["Auction"]] = relationship(
         "Auction", back_populates="property", cascade=_CASCADE
+    )
+    opportunity_links: Mapped[list["PropertyOpportunityLink"]] = relationship(
+        "PropertyOpportunityLink", back_populates="property", cascade=_CASCADE
+    )
+    enrichment_signals: Mapped[list["EnrichmentSignal"]] = relationship(
+        "EnrichmentSignal", back_populates="property", cascade=_CASCADE
     )
 
     __table_args__ = (
@@ -355,4 +380,99 @@ class IngestionLog(Base):
         Index("ix_ingestion_log_source", "source"),
         Index("ix_ingestion_log_started_at", "started_at"),
         Index("ix_ingestion_log_status", "status"),
+    )
+
+
+class PublicOpportunity(TimestampMixin, Base):
+    """Public investment opportunity discovered from municipal or government sources."""
+    __tablename__ = "public_opportunities"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    opportunity_type: Mapped[OpportunityType] = mapped_column(
+        Enum(OpportunityType, **_ENUM_VALS), nullable=False, default=OpportunityType.ALTRO
+    )
+    status: Mapped[OpportunityStatus] = mapped_column(
+        Enum(OpportunityStatus, **_ENUM_VALS), nullable=False, default=OpportunityStatus.ACTIVE
+    )
+    source: Mapped[Optional[str]] = mapped_column(String(256))
+    source_url: Mapped[Optional[str]] = mapped_column(Text)
+    province: Mapped[Optional[str]] = mapped_column(String(4))
+    city: Mapped[Optional[str]] = mapped_column(String(128))
+    latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 7))
+    longitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 7))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    budget_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    expected_completion: Mapped[Optional[str]] = mapped_column(String(64))
+    document_url: Mapped[Optional[str]] = mapped_column(Text)
+    raw_text: Mapped[Optional[str]] = mapped_column(Text)
+    extra: Mapped[Optional[dict]] = mapped_column(JSONB)
+
+    property_links: Mapped[list["PropertyOpportunityLink"]] = relationship(
+        "PropertyOpportunityLink", back_populates="opportunity", cascade=_CASCADE
+    )
+
+    __table_args__ = (
+        Index("ix_pub_opp_province", "province"),
+        Index("ix_pub_opp_city", "city"),
+        Index("ix_pub_opp_type", "opportunity_type"),
+        Index("ix_pub_opp_status", "status"),
+    )
+
+
+class PropertyOpportunityLink(Base):
+    """Many-to-many link between a property and a nearby public opportunity."""
+    __tablename__ = "property_opportunity_links"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    property_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("properties.id"), nullable=False
+    )
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("public_opportunities.id"), nullable=False
+    )
+    distance_km: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 3))
+    relevance_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    extra: Mapped[Optional[dict]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    property: Mapped["Property"] = relationship("Property", back_populates="opportunity_links")
+    opportunity: Mapped["PublicOpportunity"] = relationship(
+        "PublicOpportunity", back_populates="property_links"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("property_id", "opportunity_id", name="uq_prop_opp_link"),
+        Index("ix_prop_opp_links_property_id", "property_id"),
+        Index("ix_prop_opp_links_opportunity_id", "opportunity_id"),
+    )
+
+
+class EnrichmentSignal(TimestampMixin, Base):
+    """Enrichment intelligence signal derived from public sources for a property."""
+    __tablename__ = "enrichment_signals"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    property_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("properties.id"), nullable=False
+    )
+    signal_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    value: Mapped[Optional[str]] = mapped_column(Text)
+    confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric(4, 3))
+    source: Mapped[Optional[str]] = mapped_column(String(256))
+    extra: Mapped[Optional[dict]] = mapped_column(JSONB)
+
+    property: Mapped["Property"] = relationship("Property", back_populates="enrichment_signals")
+
+    __table_args__ = (
+        Index("ix_enrichment_signals_property_id", "property_id"),
+        Index("ix_enrichment_signals_type", "signal_type"),
     )

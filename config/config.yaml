@@ -109,6 +109,45 @@ risk:
     critical: 90
 
 # ─────────────────────────────────────────────
+#  ENRICHMENT ENGINE
+#  Correlates public opportunities with PVP
+#  auction data to improve ROI + risk scores.
+# ─────────────────────────────────────────────
+enrichment:
+  engine:
+    max_roi_uplift_pct: 15.0    # market value cannot be boosted more than 15%
+    max_risk_reduction: 20.0    # risk score cannot be reduced more than 20 pts
+
+  # Municipality monitors — add entries to enable discovery from public sources.
+  # Each entry needs at minimum: type, name, url.
+  #
+  # Supported types: json_api | rss | pnrr
+  #
+  # Example JSON API:
+  #   - type: json_api
+  #     name: comune_bologna_alienazioni
+  #     url: https://opendata.comune.bologna.it/api/explore/v2.1/catalog/datasets/...
+  #     array_key: results
+  #     fields:
+  #       title: fields.titolo
+  #       province: fields.provincia
+  #       city: fields.comune
+  #
+  # Example RSS (Albo Pretorio):
+  #   - type: rss
+  #     name: albo_bologna
+  #     url: https://www.comune.bologna.it/albo-pretorio/feed.rss
+  #     province: BO
+  #     city: Bologna
+  #
+  monitors:
+    - type: pnrr
+      enabled: false          # set to true to activate; disable for dry runs
+      provinces: []           # empty = all provinces; or e.g. [BO, MI, RM]
+      max_pages: 3
+      page_size: 50
+
+# ─────────────────────────────────────────────
 #  MONITORING
 # ─────────────────────────────────────────────
 monitoring:

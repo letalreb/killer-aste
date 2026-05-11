@@ -1,0 +1,1 @@
+"""Public opportunity discovery package."""
