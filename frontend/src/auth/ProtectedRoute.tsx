@@ -17,6 +17,8 @@ const DEV_USER = {
 export function ProtectedRoute({ children }: { readonly children: React.ReactNode }) {
   const { token, user, setAuth } = useAuthStore()
   const setMaxFavorites = useFavoritesStore((s) => s.setMaxFavorites)
+  const loadFavorites = useFavoritesStore((s) => s.load)
+  const favoritesLoaded = useFavoritesStore((s) => s.loaded)
 
   useEffect(() => {
     if (SKIP_AUTH) setAuth('dev-token', DEV_USER)
@@ -25,6 +27,10 @@ export function ProtectedRoute({ children }: { readonly children: React.ReactNod
   useEffect(() => {
     if (user?.max_favorites) setMaxFavorites(user.max_favorites)
   }, [user?.max_favorites, setMaxFavorites])
+
+  useEffect(() => {
+    if ((token || SKIP_AUTH) && !favoritesLoaded) void loadFavorites()
+  }, [token, favoritesLoaded, loadFavorites])
 
   if (!SKIP_AUTH && !token) return <Navigate to="/login" replace />
   return <>{children}</>

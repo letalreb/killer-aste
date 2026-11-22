@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User } from '../types/api'
+import { useFavoritesStore } from './favoritesStore'
 
 interface AuthState {
   token: string | null
@@ -15,7 +16,10 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       user: null,
       setAuth: (token, user) => set({ token, user }),
-      logout: () => set({ token: null, user: null }),
+      logout: () => {
+        useFavoritesStore.getState().reset()
+        set({ token: null, user: null })
+      },
     }),
     { name: 'killer-aste-auth' }
   )

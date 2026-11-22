@@ -20,7 +20,7 @@ export function FavoriteButton({ item, size = 'md' }: Props) {
       onClick={(e) => {
         e.stopPropagation()
         e.preventDefault()
-        toggle(item)
+        void toggle(item)
       }}
       disabled={disabled}
       title={

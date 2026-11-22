@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { favoritesApi } from '../api/favorites'
 
 export interface FavoriteItem {
   id: string
@@ -8,51 +8,94 @@ export interface FavoriteItem {
   roi?: number
 }
 
+const SKIP_AUTH = import.meta.env.VITE_SKIP_AUTH === 'true'
+
+/**
+ * Favorites live on the server: the backend owns the list and enforces the
+ * per-user limit. This store is a cache with optimistic updates that roll
+ * back if the server refuses (e.g. 409 when the limit is reached).
+ */
 interface FavoritesStore {
   items: FavoriteItem[]
   maxFavorites: number
+  loaded: boolean
+  error: string | null
+  load: () => Promise<void>
   setMaxFavorites: (n: number) => void
-  add: (item: FavoriteItem) => boolean   // false = already full
-  remove: (id: string) => void
-  toggle: (item: FavoriteItem) => boolean  // returns new isFavorite state
+  remove: (id: string) => Promise<void>
+  toggle: (item: FavoriteItem) => Promise<void>
   has: (id: string) => boolean
   isFull: () => boolean
-  clear: () => void
+  clear: () => Promise<void>
+  reset: () => void
 }
 
-export const useFavoritesStore = create<FavoritesStore>()(
-  persist(
-    (set, get) => ({
-      items: [],
-      maxFavorites: 3,
+export const useFavoritesStore = create<FavoritesStore>()((set, get) => ({
+  items: [],
+  maxFavorites: 3,
+  loaded: false,
+  error: null,
 
-      setMaxFavorites: (n) => set({ maxFavorites: n }),
-
-      has: (id) => get().items.some((i) => i.id === id),
-      isFull: () => get().items.length >= get().maxFavorites,
-
-      add: (item) => {
-        if (get().isFull()) return false
-        if (get().has(item.id)) return true
-        set((s) => ({ items: [...s.items, item] }))
-        return true
-      },
-
-      remove: (id) => set((s) => ({ items: s.items.filter((i) => i.id !== id) })),
-
-      toggle: (item) => {
-        if (get().has(item.id)) {
-          get().remove(item.id)
-          return false
-        }
-        return get().add(item)
-      },
-
-      clear: () => set({ items: [] }),
-    }),
-    {
-      name: 'killer-aste-favorites',
-      partialize: (s) => ({ items: s.items, maxFavorites: s.maxFavorites }),
+  load: async () => {
+    if (SKIP_AUTH) {
+      set({ loaded: true })
+      return
     }
-  )
-)
+    try {
+      const data = await favoritesApi.list()
+      set({ items: data.items, maxFavorites: data.max_favorites, loaded: true, error: null })
+    } catch {
+      set({ error: 'Impossibile caricare i preferiti' })
+    }
+  },
+
+  setMaxFavorites: (n) => set({ maxFavorites: n }),
+
+  has: (id) => get().items.some((i) => i.id === id),
+  isFull: () => get().items.length >= get().maxFavorites,
+
+  remove: async (id) => {
+    const previous = get().items
+    set({ items: previous.filter((i) => i.id !== id), error: null })
+    if (SKIP_AUTH) return
+    try {
+      await favoritesApi.remove(id)
+    } catch {
+      set({ items: previous, error: 'Impossibile rimuovere il preferito' })
+    }
+  },
+
+  toggle: async (item) => {
+    if (get().has(item.id)) {
+      await get().remove(item.id)
+      return
+    }
+    if (get().isFull()) return
+    const previous = get().items
+    set({ items: [...previous, item], error: null })
+    if (SKIP_AUTH) return
+    try {
+      const data = await favoritesApi.add(item.id)
+      set({ items: data.items, maxFavorites: data.max_favorites })
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      set({
+        items: previous,
+        error: status === 409 ? 'Limite preferiti raggiunto' : 'Impossibile aggiungere il preferito',
+      })
+    }
+  },
+
+  clear: async () => {
+    const previous = get().items
+    set({ items: [], error: null })
+    if (SKIP_AUTH) return
+    try {
+      await favoritesApi.clear()
+    } catch {
+      set({ items: previous, error: 'Impossibile svuotare i preferiti' })
+    }
+  },
+
+  reset: () => set({ items: [], maxFavorites: 3, loaded: false, error: null }),
+}))

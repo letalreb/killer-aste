@@ -10,8 +10,10 @@ export function FavoritesBar() {
 
   if (items.length === 0) return null
 
-  const slots = Array.from({ length: maxFavorites })
-  const full = items.length === maxFavorites
+  // Show empty slots only for small limits (admins have a very high limit).
+  const slotCount = maxFavorites <= 10 ? Math.max(maxFavorites, items.length) : items.length
+  const slots = Array.from({ length: slotCount })
+  const full = items.length >= maxFavorites
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[200] px-3 pb-3 pointer-events-none">
@@ -52,7 +54,7 @@ export function FavoritesBar() {
                   {/* Remove */}
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); remove(item.id) }}
+                    onClick={(e) => { e.stopPropagation(); void remove(item.id) }}
                     aria-label="Rimuovi"
                     className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-slate-700 border border-slate-600 text-slate-400 hover:text-white hover:bg-rose-600 hover:border-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all text-[10px] leading-none"
                   >
@@ -81,7 +83,7 @@ export function FavoritesBar() {
           {/* Clear all */}
           <button
             type="button"
-            onClick={() => useFavoritesStore.getState().clear()}
+            onClick={() => void useFavoritesStore.getState().clear()}
             className="flex-shrink-0 text-[10px] text-slate-600 hover:text-slate-400 transition-colors px-1"
             title="Svuota preferiti"
           >

@@ -53,6 +53,7 @@ export function IngestionTab() {
   const [triggering, setTriggering] = useState(false)
   const [cancelling, setCancelling] = useState<string | null>(null)
   const [dryRun, setDryRun] = useState(false)
+  const [force, setForce] = useState(false)
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
@@ -89,7 +90,8 @@ export function IngestionTab() {
     setTriggering(true)
     setError(null)
     try {
-      await adminApi.triggerIngestion('pvp', dryRun)
+      await adminApi.triggerIngestion('pvp', dryRun, force)
+      setForce(false)
       await new Promise((r) => setTimeout(r, 1500))
       await fetchRuns()
     } catch {
@@ -112,6 +114,11 @@ export function IngestionTab() {
       setCancelling(null)
     }
   }
+
+  // Runs are newest-first: the backend refuses new real runs after a 403
+  // until an admin explicitly forces one.
+  const lastRealRun = runs.find((r) => r.mode !== 'dry_run' && r.status !== 'running')
+  const blockedBy403 = Boolean(lastRealRun?.error_detail?.startsWith('HTTP 403'))
 
   let triggerLabel = 'Avvia ingestion'
   if (triggering) triggerLabel = 'Avvio…'
@@ -136,6 +143,17 @@ export function IngestionTab() {
             />
             Dry run (nessuna scrittura su DB)
           </label>
+          {blockedBy403 && (
+            <label className="flex items-center gap-2 text-sm text-amber-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={force}
+                onChange={(e) => setForce(e.target.checked)}
+                className="accent-amber-500"
+              />
+              Ignora blocco 403 (l'ultima run è stata rifiutata dalla fonte)
+            </label>
+          )}
           <button
             onClick={handleTrigger}
             disabled={triggering || !!activeRunId}

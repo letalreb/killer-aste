@@ -87,9 +87,9 @@ const MOCK_USERS: AdminUser[] = [
 ]
 
 export const adminApi = {
-  triggerIngestion: async (source = 'pvp', dry_run = false) => {
+  triggerIngestion: async (source = 'pvp', dry_run = false, force = false) => {
     if (SKIP_AUTH) return { status: 'queued', source, dry_run }
-    const { data } = await apiClient.post('/api/v1/admin/ingestion/trigger', { source, dry_run })
+    const { data } = await apiClient.post('/api/v1/admin/ingestion/trigger', { source, dry_run, force })
     return data as { status: string; source: string; dry_run: boolean }
   },
 
