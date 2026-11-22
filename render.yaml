@@ -32,7 +32,7 @@ services:
     region: frankfurt
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT --workers 1
+    startCommand: alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers
     healthCheckPath: /health
     envVars:
       - key: APP_ENV
@@ -43,8 +43,15 @@ services:
         value: safe
       - key: DRY_RUN
         value: "false"
-      - key: REDIS_ENABLED
+      # The free plan sleeps when idle, so the in-process scheduler would
+      # never fire: ingestion runs from GitHub Actions instead
+      # (.github/workflows/ingestion.yml).
+      - key: SCHEDULER_ENABLED
         value: "false"
+      # Render's proxy is the only way in: trust its X-Forwarded-For so the
+      # login audit records the real client IP.
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
       - key: ENABLE_METRICS
         value: "false"
       - key: API_WORKERS
@@ -52,8 +59,9 @@ services:
       - key: CONFIG_PATH
         value: config/config.yaml
       # Set these manually in the Render dashboard (never commit secrets):
-      # SECRET_KEY
+      # SECRET_KEY        (openssl rand -hex 32 — the app refuses to start without it)
       # DATABASE_URL      (asyncpg URL with ?ssl=require)
       # DATABASE_SYNC_URL (psycopg2 URL with ?sslmode=require)
       # GOOGLE_CLIENT_ID
       # FRONTEND_URL      (https://killeraste-frontend.onrender.com)
+      # INGESTION_USER_AGENT (optional, e.g. "KillerAsteBot/1.0 (+mailto:you@example.com)")

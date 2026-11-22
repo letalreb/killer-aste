@@ -1,5 +1,3 @@
-version: "3.9"
-
 # ── Development override ──────────────────────────────────────────────────────
 # Mounts source code, enables hot-reload, forces dry_run mode.
 #

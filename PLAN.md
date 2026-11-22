@@ -30,11 +30,11 @@
 ┌────────────────────────────▼────────────────────────────────────────┐
 │                       API LAYER (FastAPI)                           │
 │   GET /api/v1/auctions        GET /api/v1/properties                │
-│   POST /api/v1/analytics/roi  POST /trigger-ingestion               │
+│   POST /api/v1/analytics/roi  POST /admin/ingestion/trigger              │
 │   GET /health                 GET /metrics (Prometheus)             │
 └─────────────────────────────────────────────────────────────────────┘
 
-Supporting services: Redis (request-cap counters) · Prometheus + Grafana (metrics)
+Supporting services: Prometheus + Grafana (metrics)
 ```
 
 ---
@@ -74,7 +74,7 @@ killer-aste-2/
 │   └── integration/             ← Full pipeline test (needs PostgreSQL)
 ├── docker/
 │   ├── Dockerfile               ← Multi-stage, non-root user
-│   ├── docker-compose.yml       ← PostgreSQL + Redis + app
+│   ├── docker-compose.yml       ← PostgreSQL + app
 │   └── docker-compose.dev.yml   ← Hot-reload + dry_run override
 └── scripts/
     └── run_ingestion.py         ← Manual trigger CLI
@@ -127,7 +127,7 @@ Aggressive scrapers share these fingerprints:
 
 **Deliverables:**
 - Working venv with all deps installed
-- PostgreSQL + Redis running locally
+- PostgreSQL running locally
 - All 5 tables migrated
 - Unit tests green
 

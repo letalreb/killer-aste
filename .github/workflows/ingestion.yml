@@ -1,0 +1,61 @@
+name: Scheduled ingestion
+
+# Runs the PVP ingestion outside the web process. Needed on hosts that sleep
+# when idle (Render free plan), where the in-process scheduler never fires.
+#
+# Required repository secrets:
+#   DATABASE_URL       postgresql+asyncpg://…?ssl=require
+#   DATABASE_SYNC_URL  postgresql://…?sslmode=require
+# Optional:
+#   INGESTION_USER_AGENT  e.g. "KillerAsteBot/1.0 (+mailto:you@example.com)"
+
+on:
+  schedule:
+    - cron: "17 2 * * *"     # once a day, 02:17 UTC (off-peak in Italy)
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "pvp | enrichment | all"
+        default: pvp
+      dry_run:
+        description: "Dry run (no network traffic)"
+        type: boolean
+        default: false
+      force:
+        description: "Run even if the last run was refused with HTTP 403"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ingestion
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      APP_ENV: development   # CLI only; the web app's production checks don't apply
+      INGESTION_MODE: safe
+      SCHEDULER_ENABLED: "false"
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_SYNC_URL: ${{ secrets.DATABASE_SYNC_URL }}
+      INGESTION_USER_AGENT: ${{ secrets.INGESTION_USER_AGENT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+      - run: alembic upgrade head
+      - name: Run ingestion
+        run: |
+          ARGS="--source ${{ inputs.source || 'pvp' }}"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+          python -m scripts.run_ingestion $ARGS
