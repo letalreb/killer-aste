@@ -4,6 +4,7 @@ import type { Auction } from '../types/api'
 import { auctionsApi } from '../api/auctions'
 import { FavoriteButton } from '../components/FavoriteButton'
 import {
+  isPublicSale,
   formatCurrency,
   formatDate,
   formatRelative,
@@ -230,7 +231,7 @@ function AuctionDetail({ auction }: { auction: Auction }) {
       {/* Procedure */}
       <Section title="Procedura">
         <div className="rounded-xl border border-surface-border overflow-hidden">
-          <Row label="Tribunale" value={auction.court} />
+          <Row label={isPublicSale(auction) ? 'Ente venditore' : 'Tribunale'} value={auction.court} />
           <Row label="N. procedura" value={auction.procedure_number} />
           <Row label="Tipo asta" value={auctionTypeLabel(auction.auction_type)} />
           <Row label="Data asta" value={formatDate(auction.auction_date)} />

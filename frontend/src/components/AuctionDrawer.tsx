@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Auction } from '../types/api'
 import { auctionsApi } from '../api/auctions'
 import {
+  isPublicSale,
   formatCurrency,
   formatDate,
   formatRelative,
@@ -213,7 +214,7 @@ function DrawerContent({ auction }: { auction: Auction }) {
       <section>
         <h3 className="section-title">Procedura</h3>
         <div className="rounded-lg border border-surface-border overflow-hidden">
-          <Row label="Tribunale" value={auction.court} />
+          <Row label={isPublicSale(auction) ? 'Ente venditore' : 'Tribunale'} value={auction.court} />
           <Row label="N. procedura" value={auction.procedure_number} />
           <Row label="Tipo" value={auctionTypeLabel(auction.auction_type)} />
           <Row label="Data asta" value={formatDate(auction.auction_date)} />

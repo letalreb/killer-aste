@@ -55,7 +55,7 @@ Come lanciarla:
 | Dove | Come |
 |---|---|
 | Pannello admin | Admin → Ingestion → “Avvia ingestion” |
-| CLI | `python -m scripts.run_ingestion [--dry-run] [--source pvp\|enrichment\|all] [--force]` |
+| CLI | `python -m scripts.run_ingestion [--dry-run] [--source pvp\|public\|enrichment\|all] [--force]` |
 | Schedulata, host sempre acceso | APScheduler interno (`SCHEDULER_ENABLED=true`) |
 | Schedulata, Render free | GitHub Actions (`.github/workflows/ingestion.yml`), `SCHEDULER_ENABLED=false` |
 
@@ -63,6 +63,35 @@ Il piano free di Render va in sleep quando è inattivo, quindi lo scheduler
 interno non partirebbe mai: per questo `render.yaml` lo disattiva e la run
 giornaliera gira su GitHub Actions. Servono i secret `DATABASE_URL` e
 `DATABASE_SYNC_URL` nel repository.
+
+## Vendite di enti pubblici (alienazioni)
+
+Oltre alle aste giudiziarie, la piattaforma raccoglie le vendite immobiliari di
+Comuni, Province, ASL, Università, Agenzia del Demanio e altri enti
+(`--source public`, oppure “Enti pubblici” nel pannello admin).
+
+- **Gazzetta Ufficiale, 5ª Serie Speciale** (sezione “Aste immobiliari ed altre
+  procedure ad evidenza pubblica”): fonte nazionale, attiva di default. Ogni
+  run legge solo i numeri usciti dopo l'ultimo elaborato e non riscarica gli
+  avvisi già salvati: dopo il primo giro (30 giorni, circa 40 richieste) costa
+  pochi accessi al giorno.
+- **Pagine degli enti** (`public_sales.html_sources` in `config/config.yaml`):
+  qualunque pagina che elenca avvisi di vendita, con selettore CSS e filtro
+  per parole chiave; i PDF vengono letti col parser PDF. Gli esempi
+  (Agenzia del Demanio, un Comune) sono disattivati: vanno verificati i
+  selettori sulla pagina reale prima di abilitarli.
+- Ogni avviso viene diviso in lotti, con prezzo base, data dell'asta, scadenza
+  offerte, comune/provincia (elenco ISTAT incluso), indirizzo e tipologia, e
+  passa per gli stessi motori ROI e rischio delle aste PVP. Senza perizia il
+  valore di mercato è assunto pari alla base d'asta (`market_value_factor: 1.0`),
+  perché per gli enti la base è già la stima.
+- Filtro geografico: `public_sales.provinces` / `regions`.
+- In dashboard: filtro “Fonte” (Tribunali / Enti pubblici), badge “Ente
+  pubblico” e link diretto all'avviso.
+
+Gli avvisi sono testo libero scritto da migliaia di uffici diversi: l'estrazione
+è best-effort e un campo non riconosciuto resta vuoto. Prima di partecipare
+leggi sempre il bando completo.
 
 ## Modello ROI (`standard_v2`)
 

@@ -80,6 +80,9 @@ roi:
     light_cost_per_sqm: 400    # cosmetic refresh
     medium_cost_per_sqm: 800   # standard renovation
     heavy_cost_per_sqm: 1400   # full gut renovation
+    # No per-m² renovation for land, garages or industrial sheds (their m² are
+    # plot/shed area, not finished floor area).
+    property_types: [apartment, villa, commercial, other]
   taxes:
     registration_tax_primary: 0.02    # prima casa
     registration_tax_secondary: 0.09  # seconda casa / investor
@@ -157,6 +160,47 @@ enrichment:
       provinces: []           # empty = all provinces; or e.g. [BO, MI, RM]
       max_pages: 3
       page_size: 50
+
+# ─────────────────────────────────────────────
+#  PUBLIC SALES (alienazioni / aste di enti pubblici)
+#  Run with: --source public (or "all")
+# ─────────────────────────────────────────────
+public_sales:
+  enabled: true
+  # Keep only lots in these provinces / regions (empty = whole Italy)
+  provinces: []                # e.g. [MI, MB, CO, VA]
+  regions: []                  # e.g. [Lombardia]
+  # Without an appraisal, market value = base price × this factor. Public
+  # bodies set the base price at the appraised value, so 1.0 (no upside
+  # assumed) — unlike court auctions, where the ROI engine assumes 1.3.
+  market_value_factor: 1.0
+
+  # Gazzetta Ufficiale 5a serie — "Aste immobiliari ed altre procedure ad
+  # evidenza pubblica". National, mandatory publication for public bodies.
+  gazzetta:
+    enabled: true
+    max_issues_per_run: 15     # ~3 issues/week; first run backfills 30 days
+
+  # Any ente page that lists sale notices. Disabled examples: check the page
+  # markup, adjust the selectors, then set enabled: true.
+  html_sources:
+    - name: agenzia_demanio
+      enabled: false
+      list_url: https://www.agenziademanio.it/it/gare-aste/immobiliare/
+      link_selector: "a"
+      include: "(avviso di vendita|avviso d.asta|alienazion|vendita)"
+      exclude: "(esito|locazion|concession|valorizzazion)"
+      text_selector: "main"
+      seller: "Agenzia del Demanio"
+      max_items: 20
+    - name: comune_esempio
+      enabled: false
+      list_url: https://www.comune.esempio.it/amministrazione-trasparente/beni-immobili
+      link_selector: "a"
+      include: "(alienazion|asta pubblica|vendita immobil)"
+      exclude: "(esito|locazion|concession)"
+      seller: "Comune di Esempio"
+      max_items: 10
 
 # ─────────────────────────────────────────────
 #  MONITORING

@@ -14,6 +14,7 @@ function toApiFilters(f: FilterState, page: number): AuctionFilters {
     sort_by: f.sortBy === 'score' ? 'roi' : f.sortBy,
     show_past: f.showPast ? true : undefined,
     days_ahead: f.showPast ? undefined : f.daysAhead,
+    origin: f.origin !== 'all' ? f.origin : undefined,
     page,
     page_size: PAGE_SIZE,
   }

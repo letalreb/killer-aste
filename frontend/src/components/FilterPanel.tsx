@@ -19,6 +19,12 @@ const RISK_OPTIONS: { value: FilterState['riskLevel']; label: string }[] = [
   { value: 'high',   label: 'Alto' },
 ]
 
+const ORIGIN_OPTIONS: { value: FilterState['origin']; label: string }[] = [
+  { value: 'all',    label: 'Tutte' },
+  { value: 'court',  label: 'Tribunali' },
+  { value: 'public', label: 'Enti pubblici' },
+]
+
 const PERIOD_OPTIONS: { days: number | null; label: string }[] = [
   { days: 7,    label: '7 gg' },
   { days: 30,   label: '30 gg' },
@@ -43,6 +49,27 @@ export function FilterPanel({ filters, onChange }: Props) {
 
   return (
     <aside className="w-full lg:w-60 flex-shrink-0 space-y-5">
+
+      {/* Fonte */}
+      <div>
+        <span className="filter-label">Fonte</span>
+        <div className="grid grid-cols-3 gap-1 mt-1" role="group" aria-label="Fonte">
+          {ORIGIN_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              onClick={() => set('origin', o.value)}
+              aria-pressed={filters.origin === o.value}
+              className={`px-2 py-1.5 text-xs rounded border transition-colors ${
+                filters.origin === o.value
+                  ? 'bg-emerald-700/30 border-emerald-600 text-emerald-300'
+                  : 'border-surface-border text-slate-400 hover:text-slate-200 hover:border-slate-600'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Periodo */}
       <div>

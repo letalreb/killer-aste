@@ -36,6 +36,8 @@ class PropertyOut(OrmModel):
     floor: Optional[int] = None
     rooms: Optional[int] = None
     market_value_estimate: Optional[Decimal] = None
+    description: Optional[str] = None
+    extra: Optional[dict] = None
     latitude: Optional[Decimal] = None
     longitude: Optional[Decimal] = None
     created_at: datetime
@@ -155,7 +157,7 @@ class ROICalculationResponse(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class IngestionTriggerRequest(BaseModel):
-    source: Literal["pvp", "enrichment", "all"] = "pvp"
+    source: Literal["pvp", "enrichment", "public", "all"] = "pvp"
     dry_run: bool = False
     # Run even if the previous run was stopped by an HTTP 403 from the source.
     force: bool = False

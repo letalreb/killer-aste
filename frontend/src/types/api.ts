@@ -96,4 +96,5 @@ export interface FilterState {
   sortBy: 'roi' | 'date' | 'price' | 'score'
   showPast: boolean
   daysAhead: number
+  origin: 'all' | 'court' | 'public'
 }

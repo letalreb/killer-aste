@@ -15,8 +15,8 @@ on:
   workflow_dispatch:
     inputs:
       source:
-        description: "pvp | enrichment | all"
-        default: pvp
+        description: "pvp | public | enrichment | all (empty = pvp then public)"
+        default: ""
       dry_run:
         description: "Dry run (no network traffic)"
         type: boolean
@@ -55,7 +55,13 @@ jobs:
       - run: alembic upgrade head
       - name: Run ingestion
         run: |
-          ARGS="--source ${{ inputs.source || 'pvp' }}"
-          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
-          if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
-          python -m scripts.run_ingestion $ARGS
+          FLAGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then FLAGS="$FLAGS --dry-run"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then FLAGS="$FLAGS --force"; fi
+          SOURCES="${{ inputs.source }}"
+          [ -z "$SOURCES" ] && SOURCES="pvp public"
+          STATUS=0
+          for SRC in $SOURCES; do
+            python -m scripts.run_ingestion --source "$SRC" $FLAGS || STATUS=1
+          done
+          exit $STATUS

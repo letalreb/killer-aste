@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from typing import Optional, Sequence
 
 import structlog
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, func, literal_column, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -49,17 +49,21 @@ class PropertyRepository:
             .on_conflict_do_update(
                 constraint="uq_property_external_source",
                 set_={
-                    k: v
-                    for k, v in data.items()
-                    if k not in ("id", "external_id", "source", "created_at")
+                    **{
+                        k: v
+                        for k, v in data.items()
+                        if k not in ("id", "external_id", "source", "created_at")
+                    },
+                    "updated_at": func.now(),
                 },
             )
-            .returning(Property)
+            # xmax = 0 only for freshly inserted rows: a reliable "created" flag
+            # (comparing created_at/updated_at was always true).
+            .returning(Property, literal_column("(xmax = 0)").label("inserted"))
         )
         result = await self._session.execute(stmt)
-        row = result.scalar_one()
-        created = row.created_at == row.updated_at
-        return row, created
+        row, created = result.one()
+        return row, bool(created)
 
     async def get_by_external_id(
         self, external_id: str, source: str = "pvp"
@@ -101,17 +105,30 @@ class AuctionRepository:
             .on_conflict_do_update(
                 constraint="uq_auction_external_source",
                 set_={
-                    k: v
-                    for k, v in data.items()
-                    if k not in ("id", "external_id", "source", "created_at")
+                    **{
+                        k: v
+                        for k, v in data.items()
+                        if k not in ("id", "external_id", "source", "created_at")
+                    },
+                    "updated_at": func.now(),
                 },
             )
-            .returning(Auction)
+            # xmax = 0 only for freshly inserted rows: a reliable "created" flag
+            # (comparing created_at/updated_at was always true).
+            .returning(Auction, literal_column("(xmax = 0)").label("inserted"))
         )
         result = await self._session.execute(stmt)
-        row = result.scalar_one()
-        created = row.created_at == row.updated_at
-        return row, created
+        row, created = result.one()
+        return row, bool(created)
+
+    async def procedure_numbers(self, source: str) -> set[str]:
+        """Notice ids already stored for a source (used to skip known notices)."""
+        result = await self._session.execute(
+            select(Auction.procedure_number).where(
+                Auction.source == source, Auction.procedure_number.is_not(None)
+            )
+        )
+        return {row[0] for row in result.all()}
 
     async def get_by_external_id(
         self, external_id: str, source: str = "pvp"
@@ -141,6 +158,7 @@ class AuctionRepository:
         sort_by: str = "date",
         auction_date_from: Optional[datetime] = None,
         auction_date_to: Optional[datetime] = None,
+        origin: Optional[str] = None,
         limit: int = 200,
         offset: int = 0,
     ) -> Sequence[Auction]:
@@ -166,6 +184,10 @@ class AuctionRepository:
             q = q.where(Auction.base_price >= min_price)
         if max_price is not None:
             q = q.where(Auction.base_price <= max_price)
+        if origin == "court":
+            q = q.where(Auction.source == "pvp")
+        elif origin == "public":
+            q = q.where(Auction.source != "pvp")
         if auction_date_from is not None:
             q = q.where(Auction.auction_date >= auction_date_from)
         if auction_date_to is not None:
@@ -348,6 +370,23 @@ class IngestionLogRepository:
             return 0
         return int(log.extra.get("next_page", 0))
 
+
+    async def get_last_extra(self, sources: Sequence[str], key: str) -> Optional[str]:
+        """Most recent value of ``extra[key]`` among finished runs of ``sources``."""
+        result = await self._session.execute(
+            select(IngestionLog.extra)
+            .where(
+                IngestionLog.source.in_(list(sources)),
+                IngestionLog.status != IngestionStatus.RUNNING,
+                IngestionLog.mode != "dry_run",
+                IngestionLog.extra.has_key(key),
+            )
+            .order_by(IngestionLog.started_at.desc())
+            .limit(1)
+        )
+        extra = result.scalar_one_or_none()
+        value = (extra or {}).get(key)
+        return str(value) if value is not None else None
 
     async def requests_today(self, tz: str = "Europe/Rome") -> int:
         """Real (non dry-run) HTTP requests made since local midnight, all sources."""

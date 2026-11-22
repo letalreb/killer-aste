@@ -19,6 +19,7 @@ const DEFAULT_FILTERS: FilterState = {
   sortBy: 'date',
   showPast: false,
   daysAhead: 30,
+  origin: 'all',
 }
 
 const SKELETON_IDS = Array.from({ length: 6 }, (_, i) => `skeleton-${i}`)

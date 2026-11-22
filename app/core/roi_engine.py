@@ -94,19 +94,21 @@ class ROIEngine:
         is_primary_residence: bool = False,
         condo_annual_fees: float | None = None,
         resale_within_5_years: bool | None = None,
+        default_market_factor: float = 1.3,
     ) -> ROIResult:
         """
         Calculate ROI for an auction purchase.
 
-        If market_value is unknown (0), we assume it equals base_price * 1.3
-        as a conservative proxy based on the fact that Italian court appraisals
-        are typically 20-40% above starting price.
+        If market_value is unknown (0), we assume base_price × default_market_factor.
+        For court auctions (1.3) appraisals are typically 20-40% above the
+        starting price after ribassi; for sales by public bodies the starting
+        price usually *is* the appraisal, so callers pass 1.0.
         """
         purchase_price = base_price or 0.0
 
         # Estimate market value if not available
         if market_value <= 0:
-            market_value = purchase_price * 1.3
+            market_value = purchase_price * default_market_factor
             assumed_mv = True
         else:
             assumed_mv = False
@@ -114,7 +116,10 @@ class ROIEngine:
         # ── Renovation cost ────────────────────────────────────────────────────
         reno_cfg = self._cfg["renovation"]
         cost_per_sqm = reno_cfg.get(f"{renovation_level}_cost_per_sqm", 800)
-        renovation_cost = area_sqm * cost_per_sqm if area_sqm > 0 else 0.0
+        renovable = reno_cfg.get("property_types", ["apartment", "villa", "commercial", "other"])
+        renovation_cost = (
+            area_sqm * cost_per_sqm if area_sqm > 0 and property_type in renovable else 0.0
+        )
 
         # ── Taxes ──────────────────────────────────────────────────────────────
         tax_cfg = self._cfg["taxes"]
@@ -190,6 +195,7 @@ class ROIEngine:
             "cost_per_sqm": cost_per_sqm,
             "is_primary_residence": is_primary_residence,
             "market_value_assumed": assumed_mv,
+            "market_value_factor": default_market_factor if assumed_mv else None,
             "annual_rental_yield_proxy_pct": 5.0,
             "registration_tax": round(registration_tax, 2),
             "condo_arrears": round(condo_arrears, 2),

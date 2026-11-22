@@ -12,6 +12,7 @@ export interface AuctionFilters {
   sort_by?: string
   days_ahead?: number
   show_past?: boolean
+  origin?: 'court' | 'public'
   page?: number
   page_size?: number
 }

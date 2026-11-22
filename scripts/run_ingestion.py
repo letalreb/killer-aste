@@ -7,7 +7,8 @@ system cron) when the web process may be asleep and cannot run APScheduler.
 Usage:
     python -m scripts.run_ingestion                    # uses .env settings
     python -m scripts.run_ingestion --dry-run          # zero network traffic
-    python -m scripts.run_ingestion --source all       # PVP + enrichment
+    python -m scripts.run_ingestion --source public    # sales by public bodies
+    python -m scripts.run_ingestion --source all       # PVP + enrichment + public
     python -m scripts.run_ingestion --force            # ignore a previous 403 stop
 
 Exit codes: 0 = completed / dry_run, 1 = failed or errors.
@@ -26,7 +27,7 @@ from app.ingestion.ingestion_service import IngestionService
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run one Killer Aste ingestion pass.")
-    parser.add_argument("--source", choices=["pvp", "enrichment", "all"], default="pvp")
+    parser.add_argument("--source", choices=["pvp", "enrichment", "public", "all"], default="pvp")
     parser.add_argument("--dry-run", action="store_true", default=None)
     parser.add_argument("--force", action="store_true")
     return parser.parse_args(argv)

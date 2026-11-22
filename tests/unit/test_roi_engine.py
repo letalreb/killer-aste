@@ -119,3 +119,17 @@ class TestExitCosts:
         assert r.net_profit == pytest.approx(expected)
         assert r.selling_cost > 0 and r.holding_cost > 0
         assert r.methodology == "standard_v2"
+
+
+def test_public_sale_assumes_no_built_in_discount(engine):
+    court = engine.calculate(base_price=100_000, area_sqm=0, market_value=0)
+    public = engine.calculate(base_price=100_000, area_sqm=0, market_value=0, default_market_factor=1.0)
+    assert court.market_value == pytest.approx(130_000)
+    assert public.market_value == pytest.approx(100_000)
+    assert public.net_profit < 0          # buying at appraisal + costs loses money
+    assert public.assumptions["market_value_factor"] == 1.0
+
+
+def test_no_renovation_cost_for_land(engine):
+    land = engine.calculate(base_price=50_000, area_sqm=5_000, market_value=60_000, property_type="land")
+    assert land.renovation_cost == 0

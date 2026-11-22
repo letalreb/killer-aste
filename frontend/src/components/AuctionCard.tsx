@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { useNavigate } from 'react-router-dom'
 import type { Auction } from '../types/api'
 import {
+  isPublicSale,
   formatCurrency,
   formatDate,
   getROI,
@@ -140,13 +141,22 @@ export function AuctionCard({ auction, rank }: Props) {
 
       {/* Footer: court + partecipa */}
       <div className="mt-2 pt-2 border-t border-surface-border flex items-center justify-between gap-2">
-        <div className="text-[10px] text-slate-600 truncate min-w-0">
-          {auction.court ?? ''}
+        <div className="text-[10px] text-slate-600 truncate min-w-0 flex items-center gap-1.5">
+          {isPublicSale(auction) && (
+            <span className="flex-shrink-0 px-1.5 py-0.5 rounded bg-sky-900/40 border border-sky-700/60 text-sky-300">
+              Ente pubblico
+            </span>
+          )}
+          <span className="truncate">{auction.court ?? ''}</span>
         </div>
         <a
-          href={`https://www.google.com/search?q=${encodeURIComponent(
-            ['asta', prop?.city, prop?.address].filter(Boolean).join(' ')
-          )}`}
+          href={
+            isPublicSale(auction) && auction.source_url
+              ? auction.source_url
+              : `https://www.google.com/search?q=${encodeURIComponent(
+                  ['asta', prop?.city, prop?.address].filter(Boolean).join(' ')
+                )}`
+          }
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}

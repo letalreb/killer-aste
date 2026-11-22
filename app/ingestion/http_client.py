@@ -109,6 +109,7 @@ class PoliteHTTPClient:
 
         self._semaphore = asyncio.Semaphore(self._cfg["max_concurrent_requests"])
         self._counter = _DailyRequestCounter(initial_request_count)
+        self.requests_made: int = 0      # real requests sent by this client
         self._client: Optional[httpx.AsyncClient] = None
 
         # Back-off state
@@ -181,6 +182,7 @@ class PoliteHTTPClient:
             response = await self._execute(method, url, **kwargs)
 
         self._counter.increment()
+        self.requests_made += 1
         await self._handle_response_status(response, url)
         return response
 

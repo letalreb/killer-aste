@@ -95,7 +95,9 @@ class IngestionService:
         source:
           "pvp"        → strategy 1+2: PVP list pages + per-auction detail pages
           "enrichment" → strategy 3:   public opportunity discovery
-          "all"        → PVP then enrichment, sharing one HTTP client
+          "public"     → strategy 4:   sales by public bodies (Gazzetta
+                          Ufficiale 5a serie + configured ente pages)
+          "all"        → PVP, enrichment and public sales, sharing one HTTP client
 
         force:
           run even if the previous run was stopped by an HTTP 403. A 403 means
@@ -104,6 +106,8 @@ class IngestionService:
         """
         run_pvp = source in ("pvp", "all")
         run_enrichment = source in ("enrichment", "all")
+        run_public = source in ("public", "all")
+        self._extra_meta: dict = {}
 
         run_id = str(uuid.uuid4())[:8]
         mode = self._mode
@@ -168,6 +172,13 @@ class IngestionService:
                 if run_enrichment and not self._is_dry_run:
                     await self._run_enrichment_strategy(client, stats, run_id)
 
+                # ── Strategy 4: sales by public bodies ────────────────────────
+                if run_public:
+                    await asyncio.wait_for(
+                        self._run_public_sales_strategy(client, stats, run_id),
+                        timeout=float(run_timeout),
+                    )
+
         except asyncio.TimeoutError:
             log.warning("ingestion.timeout", run_id=run_id, timeout_seconds=run_timeout)
             final_status = IngestionStatus.FAILED
@@ -202,7 +213,7 @@ class IngestionService:
                 log_entry.id,
                 status=final_status,
                 error_detail=error_detail,
-                metadata={"next_page": next_cursor, **prop_stats},
+                metadata={"next_page": next_cursor, **prop_stats, **self._extra_meta},
                 **stats,
             )
             await self._session.commit()
@@ -476,6 +487,120 @@ class IngestionService:
                 market_value=float(detail["market_value"]),
             )
 
+    # ── Strategy 4: sales by public bodies ───────────────────────────────────
+
+    async def _run_public_sales_strategy(
+        self, client: PoliteHTTPClient, stats: dict, run_id: str
+    ) -> None:
+        """
+        Read sale notices published by public bodies, parse them into lots and
+        store each lot as Property + Auction (source = "gu" or the configured
+        source name), then run the same ROI/risk analytics as for PVP.
+
+        Each source keeps its own cursor in ingestion_logs.extra
+        ("public_cursor:<name>") and already-stored notices are never fetched
+        twice, so a daily run costs a handful of requests.
+        """
+        from app.ingestion.public_sales.notice_parser import parse_notice
+        from app.ingestion.public_sales.sources import (
+            GazzettaS5Source,
+            HtmlListSource,
+            SourceProgress,
+        )
+
+        cfg = self._yaml_cfg.get("public_sales", {})
+        if not cfg.get("enabled", False):
+            log.info("public_sales.disabled")
+            return
+
+        provinces = {p.upper() for p in cfg.get("provinces", [])}
+        regions = {r.lower() for r in cfg.get("regions", [])}
+
+        def wanted(record: dict) -> bool:
+            prop = record["property_data"]
+            if provinces and (prop.get("province") or "") not in provinces:
+                return False
+            if regions and (prop.get("region") or "").lower() not in regions:
+                return False
+            return True
+
+        sources: list = []
+        if cfg.get("gazzetta", {}).get("enabled", True):
+            sources.append(GazzettaS5Source(cfg.get("gazzetta", {})))
+        for html_cfg in cfg.get("html_sources", []) or []:
+            if html_cfg.get("enabled", False):
+                sources.append(HtmlListSource(html_cfg))
+
+        requests_before = client.requests_made
+        for src in sources:
+            progress = SourceProgress()
+            cursor_key = f"public_cursor:{src.name}"
+            if self._is_dry_run:
+                from app.ingestion.public_sales.fixtures import FIXTURE_NOTICES
+
+                async def _fixtures(src_name=src.name):
+                    for n in FIXTURE_NOTICES:
+                        if n.source == src_name:
+                            yield n
+
+                notices = _fixtures()
+            else:
+                cursor = await self._logs.get_last_extra(["public", "all"], cursor_key)
+                known = await self._auctions.procedure_numbers(src.name)
+                notices = src.fetch(client, cursor, known, progress)
+
+            async for notice in notices:
+                self._check_cancel(run_id, 0)
+                records = parse_notice(
+                    notice_id=notice.notice_id,
+                    source=notice.source,
+                    title=notice.title,
+                    body=notice.body,
+                    ente=notice.ente,
+                    sede=notice.sede,
+                    url=notice.url,
+                    published=notice.published,
+                )
+                stats["records_found"] += len(records)
+                for record in records:
+                    if wanted(record):
+                        await self._store_public_record(record, stats)
+
+            if progress.cursor and not self._is_dry_run:
+                self._extra_meta[cursor_key] = progress.cursor
+            self._extra_meta[f"public_stats:{src.name}"] = {
+                "fetched": progress.fetched,
+                "skipped_known": progress.skipped_known,
+                "errors": progress.errors,
+            }
+            stats["errors_count"] += progress.errors
+            log.info(
+                "public_sales.source_done",
+                source=src.name, cursor=progress.cursor, fetched=progress.fetched,
+                skipped_known=progress.skipped_known, errors=progress.errors,
+            )
+        if not self._is_dry_run:
+            stats["requests_made"] += client.requests_made - requests_before
+
+    async def _store_public_record(self, record: dict, stats: dict) -> None:
+        """Upsert one public-sale lot and compute analytics (own transaction)."""
+        prop_data = record["property_data"]
+        try:
+            prop, prop_created = await self._props.upsert(prop_data)
+            auction_data = {**record["auction_data"], "property_id": prop.id}
+            auction, auction_created = await self._auctions.upsert(auction_data)
+            stats["records_inserted" if auction_created else "records_updated"] += 1
+            stats["properties_inserted" if prop_created else "properties_updated"] += 1
+            await self._compute_analytics(auction, prop)
+            await self._session.commit()
+        except Exception as exc:
+            await self._session.rollback()
+            stats["errors_count"] += 1
+            log.warning(
+                "public_sales.record_error",
+                external_id=prop_data.get("external_id"), error=str(exc),
+            )
+
     # ── Analytics ─────────────────────────────────────────────────────────────
 
     async def _compute_analytics(self, auction, prop) -> None:
@@ -486,6 +611,11 @@ class IngestionService:
                 area_sqm=float(prop.area_sqm or 0),
                 market_value=float(prop.market_value_estimate or 0),
                 property_type=prop.property_type.value if prop.property_type else "other",
+                # Public bodies set the base price at the appraisal: no built-in discount.
+                default_market_factor=(
+                    1.3 if auction.source == "pvp"
+                    else float(self._yaml_cfg.get("public_sales", {}).get("market_value_factor", 1.0))
+                ),
             )
             existing = await self._valuations.get_by_auction(auction.id)
             if existing:

@@ -20,6 +20,7 @@ const DEFAULT: FilterState = {
   sortBy: 'date',
   showPast: false,
   daysAhead: 30,
+  origin: 'all',
 }
 
 const RISK_LABELS: Record<string, string> = {
@@ -35,6 +36,7 @@ export function countActiveFilters(filters: FilterState): number {
   if (filters.city) n++
   if (filters.minPrice > 0) n++
   if (filters.maxPrice > 0) n++
+  if (filters.origin !== 'all') n++
   if (filters.showPast) n++
   if (filters.daysAhead !== 30) n++
   return n
@@ -46,6 +48,12 @@ export function ActiveFilters({ filters, onChange }: Props) {
 
   const chips: Chip[] = []
 
+  if (filters.origin !== 'all') {
+    chips.push({
+      label: filters.origin === 'public' ? 'Solo enti pubblici' : 'Solo tribunali',
+      onRemove: () => set('origin', 'all'),
+    })
+  }
   if (filters.showPast) {
     chips.push({ label: 'Incluse date passate', onRemove: () => set('showPast', false) })
   } else if (filters.daysAhead !== 30) {

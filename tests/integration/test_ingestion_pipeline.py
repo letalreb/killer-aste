@@ -180,3 +180,27 @@ class TestIngestionPipeline:
         ])
         await db_session.commit()
         assert await IngestionLogRepository(db_session).requests_today() == 40
+
+    async def test_public_sales_dry_run_stores_lots_with_analytics(self, db_session, db_required):
+        import sqlalchemy as sa
+        from app.db.models import Auction, Valuation
+        from app.ingestion.ingestion_service import IngestionService
+
+        result = await IngestionService(db_session, dry_run=True).run(source="public")
+        assert result["status"] == "dry_run"
+        assert result["records_inserted"] == 9          # 8 Genzano lots + Momo
+        assert result["requests_made"] == 0
+
+        rows = (await db_session.execute(
+            sa.select(Auction).where(Auction.source == "gu").order_by(Auction.external_id)
+        )).scalars().all()
+        assert {a.procedure_number for a in rows} == {"TX26BIA353", "TX26BIA326"}
+        valuations = (await db_session.execute(
+            sa.select(sa.func.count()).select_from(Valuation)
+            .where(Valuation.auction_id.in_([a.id for a in rows]))
+        )).scalar_one()
+        assert valuations == 9
+
+        # Idempotent: a second run updates, never duplicates.
+        again = await IngestionService(db_session, dry_run=True).run(source="public")
+        assert again["records_inserted"] == 0 and again["records_updated"] == 9

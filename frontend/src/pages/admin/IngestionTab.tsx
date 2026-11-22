@@ -54,6 +54,7 @@ export function IngestionTab() {
   const [cancelling, setCancelling] = useState<string | null>(null)
   const [dryRun, setDryRun] = useState(false)
   const [force, setForce] = useState(false)
+  const [source, setSource] = useState<'pvp' | 'public' | 'all'>('pvp')
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
@@ -90,7 +91,7 @@ export function IngestionTab() {
     setTriggering(true)
     setError(null)
     try {
-      await adminApi.triggerIngestion('pvp', dryRun, force)
+      await adminApi.triggerIngestion(source, dryRun, force)
       setForce(false)
       await new Promise((r) => setTimeout(r, 1500))
       await fetchRuns()
@@ -133,7 +134,19 @@ export function IngestionTab() {
           La run parte in background. Aggiorna automaticamente ogni 4s finché è attiva.
           Runs attive da più di {STALE_HOURS}h vengono segnalate in arancione.
         </p>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-slate-400">
+            Fonte
+            <select
+              value={source}
+              onChange={(e) => setSource(e.target.value as 'pvp' | 'public' | 'all')}
+              className="bg-slate-800 border border-surface-border rounded px-2 py-1 text-sm text-slate-200"
+            >
+              <option value="pvp">Tribunali (PVP)</option>
+              <option value="public">Enti pubblici (Gazzetta Ufficiale)</option>
+              <option value="all">Tutte</option>
+            </select>
+          </label>
           <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer select-none">
             <input
               type="checkbox"

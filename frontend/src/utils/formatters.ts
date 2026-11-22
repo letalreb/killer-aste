@@ -92,3 +92,8 @@ export function auctionTypeLabel(type?: string): string {
   }
   return map[type ?? ''] ?? type ?? '—'
 }
+
+/** Sales published by public bodies (Gazzetta Ufficiale, ente pages) rather than courts (PVP). */
+export function isPublicSale(auction: { source?: string }): boolean {
+  return Boolean(auction.source) && auction.source !== 'pvp'
+}

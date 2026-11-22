@@ -193,3 +193,28 @@ class TestOps:
         r = await ctx["client"].get("/ready")
         assert r.status_code == 200
         assert set(r.json()) == {"status"}
+
+
+class TestOriginFilter:
+    async def test_public_and_court_sales_are_separable(self, ctx):
+        from app.db.database import AsyncSessionFactory
+        from app.db.models import Auction, Property
+
+        async with AsyncSessionFactory() as s:
+            prop = Property(external_id="TX26BIA1", source="gu", city="Momo", province="NO")
+            s.add(prop)
+            await s.flush()
+            s.add(Auction(property_id=prop.id, external_id="TX26BIA1", source="gu",
+                          court="COMUNE DI MOMO", base_price=92_750))
+            await s.commit()
+
+        c, h = ctx["client"], ctx["std"]
+        params = {"show_past": True}
+        all_ = (await c.get("/api/v1/auctions", params=params, headers=h)).json()
+        public = (await c.get("/api/v1/auctions", params={**params, "origin": "public"}, headers=h)).json()
+        court = (await c.get("/api/v1/auctions", params={**params, "origin": "court"}, headers=h)).json()
+        assert len(all_) == 4
+        assert [a["source"] for a in public] == ["gu"]
+        assert all(a["source"] == "pvp" for a in court) and len(court) == 3
+        bad = await c.get("/api/v1/auctions", params={"origin": "x"}, headers=h)
+        assert bad.status_code == 422

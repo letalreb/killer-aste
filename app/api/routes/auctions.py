@@ -37,6 +37,7 @@ async def list_auctions(
     sort_by: str = Query(default="date"),
     days_ahead: Optional[int] = Query(default=30, ge=1, le=3650),
     show_past: bool = Query(default=False),
+    origin: Optional[str] = Query(default=None, pattern="^(court|public)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=200, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -67,6 +68,7 @@ async def list_auctions(
         sort_by=sort_by,
         auction_date_from=auction_date_from,
         auction_date_to=auction_date_to,
+        origin=origin,
         limit=page_size,
         offset=(page - 1) * page_size,
     )
