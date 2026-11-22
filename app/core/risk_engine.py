@@ -14,7 +14,6 @@ Weights (configurable via config.yaml):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 # ─────────────────────────────────────────────────────────────────────────────

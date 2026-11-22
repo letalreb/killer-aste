@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -123,6 +123,10 @@ class ROICalculationRequest(BaseModel):
     property_type: str = "apartment"
     renovation_level: str = Field(default="medium", pattern="^(light|medium|heavy)$")
     is_primary_residence: bool = False
+    # Real annual condo fees, if known (otherwise estimated from config).
+    condo_annual_fees: Optional[float] = Field(default=None, ge=0)
+    # Override config: does the investor plan to resell within 5 years?
+    resale_within_5_years: Optional[bool] = None
 
 
 class ROICalculationResponse(BaseModel):
@@ -137,6 +141,10 @@ class ROICalculationResponse(BaseModel):
     net_profit: float
     roi_percentage: float
     payback_years: float
+    condo_arrears: float
+    holding_cost: float
+    selling_cost: float
+    capital_gains_tax: float
     is_viable: bool
     summary: str
     assumptions: dict
@@ -147,8 +155,10 @@ class ROICalculationResponse(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class IngestionTriggerRequest(BaseModel):
-    source: str = Field(default="pvp", pattern="^[a-z_]+$")
+    source: Literal["pvp", "enrichment", "all"] = "pvp"
     dry_run: bool = False
+    # Run even if the previous run was stopped by an HTTP 403 from the source.
+    force: bool = False
 
 
 class IngestionStatusResponse(BaseModel):

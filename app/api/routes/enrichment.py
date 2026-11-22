@@ -20,7 +20,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.routes.auth import UserOut, get_current_user
+from app.api.routes.auth import UserOut, get_current_user, require_admin
 from app.db.database import AsyncSessionFactory, get_db
 from app.db.models import OpportunityStatus, OpportunityType
 from app.db.repository import EnrichmentSignalRepository, PublicOpportunityRepository
@@ -79,12 +79,6 @@ class DiscoveryTriggerRequest(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _require_admin(user: UserOut = Depends(get_current_user)) -> UserOut:
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
-
 
 def _opp_to_dict(opp) -> dict:
     return {
@@ -176,7 +170,7 @@ async def get_property_opportunities(
 async def trigger_discovery(
     req: DiscoveryTriggerRequest,
     background_tasks: BackgroundTasks,
-    _admin: UserOut = Depends(_require_admin),
+    _admin: UserOut = Depends(require_admin),
 ) -> dict:
     background_tasks.add_task(_run_discovery_background, req.provinces)
     return {"status": "queued", "provinces": req.provinces}
@@ -186,7 +180,7 @@ async def trigger_discovery(
 async def create_opportunity(
     req: OpportunityCreateRequest,
     db: AsyncSession = Depends(get_db),
-    _admin: UserOut = Depends(_require_admin),
+    _admin: UserOut = Depends(require_admin),
 ) -> dict:
     try:
         opp_type = OpportunityType(req.opportunity_type)

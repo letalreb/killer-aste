@@ -56,7 +56,7 @@ def extract_pdf(source: bytes | str) -> PDFExtractResult:
         return PDFExtractResult(text="", error=f"load_failed: {exc}")
 
     try:
-        import pdfplumber
+        import pdfplumber  # noqa: F401  (availability check)
         return _extract_with_pdfplumber(raw)
     except ImportError:
         log.warning("pdf_extractor.pdfplumber_unavailable")

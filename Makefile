@@ -30,7 +30,7 @@ setup:         ## Copy .env.example and install Python deps
 install:       ## Install Python dependencies into .venv
 	python3 -m venv .venv
 	$(PIP) install --upgrade pip --quiet
-	$(PIP) install -r requirements.txt
+	$(PIP) install -r requirements-dev.txt
 
 # ── Docker (local dev) ────────────────────────────────────────────────────────
 

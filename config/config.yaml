@@ -83,6 +83,7 @@ roi:
   taxes:
     registration_tax_primary: 0.02    # prima casa
     registration_tax_secondary: 0.09  # seconda casa / investor
+    registration_tax_min_eur: 1000    # imposta di registro minima
     cadastral_tax_fixed: 50           # EUR
     mortgage_tax_fixed: 50            # EUR
   professional_fees:
@@ -90,7 +91,17 @@ roi:
     notary_pct: 0.015
     legal_pct: 0.02
     agency_pct: 0.0            # direct purchase – no agent
-  target_min_roi_pct: 0.15    # flag if < 15%
+  # Exit-side costs (estimates — tune to your market and tax position)
+  exit:
+    condo_property_types: [apartment]
+    condo_fee_per_sqm_year: 12        # EUR/m²/year, used when real fees are unknown
+    condo_arrears_years: 2            # buyer is jointly liable for current + previous year
+    holding_months: 12                # aggiudicazione → decreto → liberazione → rivendita
+    holding_cost_pct_per_year: 0.01   # IMU, utenze, assicurazione (% of purchase price)
+    selling_cost_pct: 0.0366          # agenzia 3% + IVA
+    resale_within_5_years: true       # plusvalenza tassabile se si rivende entro 5 anni
+    capital_gains_tax_rate: 0.26      # imposta sostitutiva sulla plusvalenza
+  target_min_roi_pct: 15      # percent; flag if ROI < 15%
 
 # ─────────────────────────────────────────────
 #  RISK ENGINE WEIGHTS (must sum to 1.0)

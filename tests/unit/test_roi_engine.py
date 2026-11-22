@@ -81,3 +81,41 @@ class TestROICalculation:
         medium = engine.calculate(100_000, 80, 150_000, renovation_level="medium")
         heavy = engine.calculate(100_000, 80, 150_000, renovation_level="heavy")
         assert light.renovation_cost < medium.renovation_cost < heavy.renovation_cost
+
+
+class TestExitCosts:
+    """standard_v2: costs that the v1 model ignored and that inflate ROI."""
+
+    def test_registration_tax_minimum(self, engine):
+        r = engine.calculate(base_price=5_000, area_sqm=20, market_value=10_000)
+        assert r.assumptions["registration_tax"] == 1000
+
+    def test_condo_arrears_only_for_apartments(self, engine):
+        apt = engine.calculate(base_price=100_000, area_sqm=80, market_value=150_000)
+        land = engine.calculate(
+            base_price=100_000, area_sqm=80, market_value=150_000, property_type="land"
+        )
+        assert apt.condo_arrears > 0
+        assert land.condo_arrears == 0
+
+    def test_known_condo_fees_used(self, engine):
+        r = engine.calculate(
+            base_price=100_000, area_sqm=80, market_value=150_000, condo_annual_fees=1_500
+        )
+        assert r.condo_arrears == pytest.approx(3_000)
+
+    def test_capital_gains_only_within_five_years(self, engine):
+        quick = engine.calculate(base_price=100_000, area_sqm=60, market_value=250_000)
+        held = engine.calculate(
+            base_price=100_000, area_sqm=60, market_value=250_000, resale_within_5_years=False
+        )
+        assert quick.capital_gains_tax > 0
+        assert held.capital_gains_tax == 0
+        assert quick.net_profit < held.net_profit
+
+    def test_net_profit_accounts_for_exit_costs(self, engine):
+        r = engine.calculate(base_price=100_000, area_sqm=60, market_value=250_000)
+        expected = r.gross_profit - r.holding_cost - r.selling_cost - r.capital_gains_tax
+        assert r.net_profit == pytest.approx(expected)
+        assert r.selling_cost > 0 and r.holding_cost > 0
+        assert r.methodology == "standard_v2"

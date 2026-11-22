@@ -35,7 +35,7 @@ from typing import Optional
 import structlog
 from bs4 import BeautifulSoup
 
-from app.ingestion.http_client import AntiBanHTTPClient
+from app.ingestion.http_client import PoliteHTTPClient
 
 log = structlog.get_logger(__name__)
 
@@ -45,7 +45,7 @@ class BaseMonitor:
 
     async def discover(
         self,
-        client: AntiBanHTTPClient,
+        client: PoliteHTTPClient,
         provinces: Optional[list[str]] = None,
     ) -> list[dict]:
         """Discover opportunities. Returns raw dicts for opportunity_parser."""
@@ -75,7 +75,7 @@ class GenericJsonApiMonitor(BaseMonitor):
 
     async def discover(
         self,
-        client: AntiBanHTTPClient,
+        client: PoliteHTTPClient,
         provinces: Optional[list[str]] = None,
     ) -> list[dict]:
         effective_filter = (
@@ -136,7 +136,7 @@ class GenericRssMonitor(BaseMonitor):
 
     async def discover(
         self,
-        client: AntiBanHTTPClient,
+        client: PoliteHTTPClient,
         provinces: Optional[list[str]] = None,
     ) -> list[dict]:
         if provinces and self._province and self._province.upper() not in provinces:
@@ -198,7 +198,7 @@ class PNRRMonitor(BaseMonitor):
 
     async def discover(
         self,
-        client: AntiBanHTTPClient,
+        client: PoliteHTTPClient,
         provinces: Optional[list[str]] = None,
     ) -> list[dict]:
         if not self._enabled:

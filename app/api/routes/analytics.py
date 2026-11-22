@@ -27,6 +27,8 @@ async def calculate_roi(request: ROICalculationRequest) -> ROICalculationRespons
         property_type=request.property_type,
         renovation_level=request.renovation_level,
         is_primary_residence=request.is_primary_residence,
+        condo_annual_fees=request.condo_annual_fees,
+        resale_within_5_years=request.resale_within_5_years,
     )
     return ROICalculationResponse(
         purchase_price=result.purchase_price,
@@ -40,6 +42,10 @@ async def calculate_roi(request: ROICalculationRequest) -> ROICalculationRespons
         net_profit=result.net_profit,
         roi_percentage=result.roi_percentage,
         payback_years=result.payback_years,
+        condo_arrears=result.condo_arrears,
+        holding_cost=result.holding_cost,
+        selling_cost=result.selling_cost,
+        capital_gains_tax=result.capital_gains_tax,
         is_viable=result.is_viable(cfg["roi"].get("target_min_roi_pct", 15)),
         summary=result.summary(),
         assumptions=result.assumptions,

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
 
 from app.ingestion.discovery.opportunity_parser import (
     _classify_type,

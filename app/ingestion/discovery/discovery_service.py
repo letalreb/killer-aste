@@ -22,7 +22,7 @@ from app.config.settings import load_yaml_config
 from app.db.repository import EnrichmentSignalRepository, PublicOpportunityRepository
 from app.ingestion.discovery.municipality_monitor import build_monitors
 from app.ingestion.discovery.opportunity_parser import parse_opportunity
-from app.ingestion.http_client import AntiBanHTTPClient
+from app.ingestion.http_client import PoliteHTTPClient
 
 log = structlog.get_logger(__name__)
 
@@ -39,20 +39,20 @@ class DiscoveryService:
 
     async def run(self, provinces: Optional[list[str]] = None) -> dict:
         """
-        Execute a full discovery run with its own AntiBanHTTPClient.
+        Execute a full discovery run with its own PoliteHTTPClient.
         Use run_with_client() instead when the caller already has a client open
         (e.g. when invoked from IngestionService to share rate-limit budget).
         """
-        async with AntiBanHTTPClient() as client:
+        async with PoliteHTTPClient() as client:
             return await self.run_with_client(client, provinces=provinces)
 
     async def run_with_client(
         self,
-        client: AntiBanHTTPClient,
+        client: PoliteHTTPClient,
         provinces: Optional[list[str]] = None,
     ) -> dict:
         """
-        Execute a full discovery run using an already-open AntiBanHTTPClient.
+        Execute a full discovery run using an already-open PoliteHTTPClient.
         This allows the caller (IngestionService) to share rate-limiting state
         across PVP and enrichment HTTP calls.
         """

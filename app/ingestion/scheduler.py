@@ -11,7 +11,6 @@ The scheduler is started by the FastAPI lifespan and stopped on shutdown.
 from __future__ import annotations
 
 import random
-from datetime import datetime
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -81,6 +80,9 @@ def get_scheduler() -> AsyncIOScheduler:
 
 
 async def start_scheduler() -> None:
+    if not get_settings().scheduler_enabled:
+        log.info("scheduler.disabled", reason="SCHEDULER_ENABLED=false (external cron)")
+        return
     scheduler = get_scheduler()
     if not scheduler.running:
         scheduler.start()

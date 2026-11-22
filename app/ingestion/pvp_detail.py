@@ -35,7 +35,7 @@ from typing import Optional
 import structlog
 from bs4 import BeautifulSoup
 
-from app.ingestion.http_client import AntiBanHTTPClient
+from app.ingestion.http_client import PoliteHTTPClient
 
 log = structlog.get_logger(__name__)
 
@@ -86,7 +86,7 @@ def _parse_date(raw: object) -> Optional[datetime]:
 # ── Main public function ──────────────────────────────────────────────────────
 
 async def fetch_detail(
-    client: AntiBanHTTPClient,
+    client: PoliteHTTPClient,
     base_url: str,
     external_id: str,
     *,

@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.routes.auth import UserOut, get_current_user
+from app.api.routes.auth import UserOut, require_admin
 from app.api.schemas import IngestionTriggerRequest
 from app.db.database import AsyncSessionFactory, get_db
 from app.db.models import Auction, IngestionLog, IngestionStatus, LoginAudit, Property, User, UserRole
@@ -28,25 +28,16 @@ log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-# ─── Admin guard ──────────────────────────────────────────────────────────────
-
-def require_admin(user: UserOut = Depends(get_current_user)) -> UserOut:
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
-
-
 # ─── Ingestion ────────────────────────────────────────────────────────────────
 
-async def _run_ingestion_background(source: str, dry_run: bool) -> None:
-    import os
+async def _run_ingestion_background(source: str, dry_run: bool, force: bool) -> None:
     from app.ingestion.ingestion_service import IngestionService
-    if dry_run:
-        os.environ["DRY_RUN"] = "true"
     try:
         async with AsyncSessionFactory() as session:
-            service = IngestionService(session)
-            result = await service.run(source=source)
+            # dry_run is passed explicitly: settings are cached, so mutating
+            # os.environ at runtime would have no effect.
+            service = IngestionService(session, dry_run=dry_run)
+            result = await service.run(source=source, force=force)
         log.info("admin.ingestion_complete", **result)
     except Exception as exc:
         log.error("admin.ingestion_error", error=str(exc))
@@ -58,8 +49,13 @@ async def trigger_ingestion(
     background_tasks: BackgroundTasks,
     admin: UserOut = Depends(require_admin),
 ) -> dict:
-    background_tasks.add_task(_run_ingestion_background, body.source, body.dry_run)
-    log.info("admin.ingestion_queued", source=body.source, dry_run=body.dry_run, by=admin.email)
+    background_tasks.add_task(
+        _run_ingestion_background, body.source, body.dry_run, body.force
+    )
+    log.info(
+        "admin.ingestion_queued",
+        source=body.source, dry_run=body.dry_run, force=body.force, by=admin.email,
+    )
     return {"status": "queued", "source": body.source, "dry_run": body.dry_run}
 
 
@@ -262,6 +258,8 @@ async def set_user_role(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.google_sub == admin.sub and new_role != UserRole.ADMIN:
+        raise HTTPException(status_code=400, detail="You cannot remove your own admin role")
 
     from app.db.repository import UserRepository
     repo = UserRepository(db)

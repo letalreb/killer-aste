@@ -3,7 +3,6 @@ Auction endpoints.
 
 GET  /auctions                   – paginated list with server-side filters
 GET  /auctions/{id}              – full detail with property + ROI + risk flags
-POST /auctions/trigger-ingestion – manually fire an ingestion run (deprecated: use admin route)
 GET  /auctions/stats             – status counts
 """
 from __future__ import annotations
@@ -15,15 +14,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import (
-    AuctionOut,
-    IngestionStatusResponse,
-    IngestionTriggerRequest,
-)
+from app.api.schemas import AuctionOut
 from app.db.database import get_db
 from app.db.models import AuctionStatus
 from app.db.repository import AuctionRepository
-from app.ingestion.ingestion_service import IngestionService
 
 router = APIRouter(prefix="/auctions", tags=["auctions"])
 
@@ -107,20 +101,3 @@ async def get_auction(
     if not auction:
         raise HTTPException(status_code=404, detail="Auction not found")
     return AuctionOut.model_validate(auction)
-
-
-@router.post(
-    "/trigger-ingestion",
-    response_model=IngestionStatusResponse,
-    status_code=202,
-)
-async def trigger_ingestion(
-    request: IngestionTriggerRequest,
-    db: AsyncSession = Depends(get_db),
-) -> IngestionStatusResponse:
-    import os
-    if request.dry_run:
-        os.environ["DRY_RUN"] = "true"
-    service = IngestionService(db)
-    result = await service.run(source=request.source)
-    return IngestionStatusResponse(**result)

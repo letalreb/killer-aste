@@ -1,7 +1,6 @@
 """Unit tests for pvp_detail parsers (no network calls)."""
 from decimal import Decimal
 
-import pytest
 
 from app.ingestion.pvp_detail import _parse_json_detail, _parse_html_detail
 

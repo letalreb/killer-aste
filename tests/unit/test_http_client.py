@@ -5,11 +5,10 @@ All tests run in dry_run mode — zero real network I/O.
 """
 from __future__ import annotations
 
-import json
 from datetime import date
 
 import pytest
-from app.ingestion.http_client import AntiBanHTTPClient, DailyCap, _beta_delay
+from app.ingestion.http_client import PoliteHTTPClient, DailyCap, _beta_delay
 
 
 class TestBetaDelay:
@@ -29,10 +28,10 @@ class TestBetaDelay:
         assert d == pytest.approx(3.0)
 
 
-class TestAntiBanHTTPClient:
+class TestPoliteHTTPClient:
     @pytest.mark.asyncio
     async def test_dry_run_returns_json_response(self):
-        async with AntiBanHTTPClient(dry_run=True) as client:
+        async with PoliteHTTPClient(dry_run=True) as client:
             resp = await client.post(
                 "https://pvp.giustizia.it/ric-496b258c-986a1b71/ric-ms/ricerca/vendite",
                 json={"tipoLotto": "IMMOBILI"},
@@ -55,7 +54,7 @@ class TestAntiBanHTTPClient:
 
         monkeypatch.setattr(httpx.AsyncClient, "send", patched_send)
 
-        async with AntiBanHTTPClient(dry_run=True) as client:
+        async with PoliteHTTPClient(dry_run=True) as client:
             await client.post(
                 "https://pvp.giustizia.it/some/endpoint",
                 json={},
@@ -66,7 +65,7 @@ class TestAntiBanHTTPClient:
 
     @pytest.mark.asyncio
     async def test_dry_run_paginates_via_params(self):
-        async with AntiBanHTTPClient(dry_run=True) as client:
+        async with PoliteHTTPClient(dry_run=True) as client:
             resp_p0 = await client.post("https://example.com/", json={}, params={"page": 0})
             resp_p1 = await client.post("https://example.com/", json={}, params={"page": 1})
 
@@ -88,7 +87,7 @@ class TestAntiBanHTTPClient:
             "think_time_min_seconds": 0.0,
             "think_time_max_seconds": 0.0,
         }
-        async with AntiBanHTTPClient(mode_config=cfg, dry_run=False) as client:
+        async with PoliteHTTPClient(mode_config=cfg, dry_run=False) as client:
             # Pre-fill counter to ceiling
             client._counter._count = 3
             client._counter._date = date.today()
@@ -97,26 +96,16 @@ class TestAntiBanHTTPClient:
                 await client.get("https://example.com/")
 
     @pytest.mark.asyncio
-    async def test_session_rotation_resets_counter(self):
-        async with AntiBanHTTPClient(dry_run=True) as client:
-            original_started = client._session_started_at
-            client._session_request_count = 999
-            await client._maybe_rotate_session()
-
-            assert client._session_request_count == 0
-            assert client._session_started_at >= original_started
-
-    @pytest.mark.asyncio
     async def test_get_method_also_works_dry_run(self):
-        async with AntiBanHTTPClient(dry_run=True) as client:
+        async with PoliteHTTPClient(dry_run=True) as client:
             resp = await client.get("https://pvp.giustizia.it/some/page", params={"page": 0})
         assert resp.status_code == 200
 
     def test_counter_resets_on_new_day(self):
-        from app.ingestion.http_client import _InMemoryRequestCounter
+        from app.ingestion.http_client import _DailyRequestCounter
         from datetime import date, timedelta
 
-        counter = _InMemoryRequestCounter()
+        counter = _DailyRequestCounter()
         counter._count = 50
         counter._date = date.today() - timedelta(days=1)  # yesterday
 
@@ -126,9 +115,8 @@ class TestAntiBanHTTPClient:
 
     @pytest.mark.asyncio
     async def test_cooldown_set_and_clears(self):
-        import time
 
-        async with AntiBanHTTPClient(dry_run=True) as client:
+        async with PoliteHTTPClient(dry_run=True) as client:
             client._set_cooldown(0)  # already expired
             await client._wait_for_cooldown()  # should not sleep
             assert client._cooldown_until is None

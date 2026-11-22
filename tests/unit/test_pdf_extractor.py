@@ -1,10 +1,8 @@
 """Unit tests for app.ingestion.discovery.pdf_extractor."""
 from __future__ import annotations
 
-import io
 from decimal import Decimal
 
-import pytest
 
 from app.ingestion.discovery.pdf_extractor import (
     PDFExtractResult,

@@ -6,7 +6,6 @@ from __future__ import annotations
 import os
 
 import pytest
-import pytest_asyncio
 
 # Force dry-run mode for all tests — zero real network I/O.
 os.environ.setdefault("DRY_RUN", "true")

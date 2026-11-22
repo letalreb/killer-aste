@@ -1,25 +1,33 @@
 """
 ROI Calculation Engine.
 
-Formula (secondary-home purchase, investor scenario):
-───────────────────────────────────────────────────────
+Formula (buy-renovate-resell, investor scenario) — methodology "standard_v2"
+──────────────────────────────────────────────────────────────────────────────
 Total acquisition cost = purchase_price
-                       + registration_tax (9%)
-                       + cadastral_tax (€50)
-                       + mortgage_tax (€50)
-                       + notary_fee (base + % of value)
+                       + registration_tax (9% / 2% prima casa, minimum €1,000)
+                       + cadastral_tax (€50) + mortgage_tax (€50)
+                       + transfer/delegate fees (base + % of value)
                        + legal_fee (% of purchase_price)
                        + renovation_cost (€/m² × area)
+                       + condo arrears the buyer inherits (art. 63 disp. att.
+                         c.c.: current + previous year), residential only
 
-Gross profit = market_value - total_acquisition_cost
-Net profit   = gross_profit (simplified: rental yield model is an extension)
-ROI %        = net_profit / total_acquisition_cost × 100
+Holding cost   = purchase_price × holding_cost_pct_per_year × holding_months/12
+Selling cost   = market_value × selling_cost_pct (agency + VAT)
+Capital gains  = plusvalenza × capital_gains_tax_rate, if resold within 5 years
+                 (plusvalenza = net sale price − deductible acquisition costs)
+
+Gross profit = market_value − total_acquisition_cost
+Net profit   = gross_profit − holding − selling − capital gains tax
+ROI %        = net_profit / (total_acquisition_cost + holding) × 100
+
+All rates come from config.yaml (roi section) and are estimates: they are
+meant to stop the screener from overstating returns, not to replace a
+professional assessment.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import Decimal
-from typing import Optional
 
 
 @dataclass
@@ -35,7 +43,11 @@ class ROIResult:
     net_profit: float
     roi_percentage: float
     payback_years: float
-    methodology: str = "standard_v1"
+    condo_arrears: float = 0.0
+    holding_cost: float = 0.0
+    selling_cost: float = 0.0
+    capital_gains_tax: float = 0.0
+    methodology: str = "standard_v2"
     assumptions: dict = field(default_factory=dict)
 
     def to_db_dict(self) -> dict:
@@ -80,6 +92,8 @@ class ROIEngine:
         property_type: str = "apartment",
         renovation_level: str = "medium",
         is_primary_residence: bool = False,
+        condo_annual_fees: float | None = None,
+        resale_within_5_years: bool | None = None,
     ) -> ROIResult:
         """
         Calculate ROI for an auction purchase.
@@ -109,7 +123,9 @@ class ROIEngine:
         else:
             reg_tax_rate = tax_cfg["registration_tax_secondary"]
 
-        registration_tax = purchase_price * reg_tax_rate
+        registration_tax = max(
+            purchase_price * reg_tax_rate, float(tax_cfg.get("registration_tax_min_eur", 1000))
+        )
         cadastral_tax = float(tax_cfg["cadastral_tax_fixed"])
         mortgage_tax = float(tax_cfg["mortgage_tax_fixed"])
         total_tax = registration_tax + cadastral_tax + mortgage_tax
@@ -122,6 +138,14 @@ class ROIEngine:
 
         legal_cost = purchase_price * fee_cfg["legal_pct"]
 
+        # ── Condo arrears inherited by the buyer ──────────────────────────────
+        exit_cfg = self._cfg.get("exit", {})
+        condo_arrears = 0.0
+        if property_type in exit_cfg.get("condo_property_types", ["apartment"]):
+            if condo_annual_fees is None:
+                condo_annual_fees = area_sqm * float(exit_cfg.get("condo_fee_per_sqm_year", 0))
+            condo_arrears = condo_annual_fees * float(exit_cfg.get("condo_arrears_years", 2))
+
         # ── Totals ─────────────────────────────────────────────────────────────
         total_acquisition = (
             purchase_price
@@ -129,12 +153,31 @@ class ROIEngine:
             + total_tax
             + notary_cost
             + legal_cost
+            + condo_arrears
         )
 
-        gross_profit = market_value - total_acquisition
-        net_profit = gross_profit  # simplified (no financing costs)
+        # ── Exit: holding, selling, capital gains ─────────────────────────────
+        holding_months = float(exit_cfg.get("holding_months", 0))
+        holding_cost = (
+            purchase_price * float(exit_cfg.get("holding_cost_pct_per_year", 0))
+            * holding_months / 12
+        )
+        selling_cost = market_value * float(exit_cfg.get("selling_cost_pct", 0))
 
-        roi_pct = (net_profit / total_acquisition * 100) if total_acquisition > 0 else 0.0
+        if resale_within_5_years is None:
+            resale_within_5_years = bool(exit_cfg.get("resale_within_5_years", True))
+        capital_gains_tax = 0.0
+        if resale_within_5_years and not is_primary_residence:
+            deductible = purchase_price + total_tax + notary_cost + legal_cost + renovation_cost
+            plusvalenza = market_value - selling_cost - deductible
+            if plusvalenza > 0:
+                capital_gains_tax = plusvalenza * float(exit_cfg.get("capital_gains_tax_rate", 0))
+
+        gross_profit = market_value - total_acquisition
+        net_profit = gross_profit - holding_cost - selling_cost - capital_gains_tax
+
+        invested = total_acquisition + holding_cost
+        roi_pct = (net_profit / invested * 100) if invested > 0 else 0.0
 
         # Payback in years: assume 5% net annual rental yield as proxy
         annual_rental_proxy = market_value * 0.05
@@ -148,6 +191,13 @@ class ROIEngine:
             "is_primary_residence": is_primary_residence,
             "market_value_assumed": assumed_mv,
             "annual_rental_yield_proxy_pct": 5.0,
+            "registration_tax": round(registration_tax, 2),
+            "condo_arrears": round(condo_arrears, 2),
+            "holding_months": holding_months,
+            "holding_cost": round(holding_cost, 2),
+            "selling_cost": round(selling_cost, 2),
+            "resale_within_5_years": resale_within_5_years,
+            "capital_gains_tax": round(capital_gains_tax, 2),
         }
 
         return ROIResult(
@@ -162,5 +212,9 @@ class ROIEngine:
             net_profit=net_profit,
             roi_percentage=roi_pct,
             payback_years=payback_years,
+            condo_arrears=condo_arrears,
+            holding_cost=holding_cost,
+            selling_cost=selling_cost,
+            capital_gains_tax=capital_gains_tax,
             assumptions=assumptions,
         )

@@ -4,13 +4,13 @@ Ingestion Service — orchestrates ingestion runs across multiple strategies.
 Strategies
 ──────────
 pvp         PVP list pages + per-auction detail enrichment (valore di stima,
-            source URL, expert report). Both use the AntiBanHTTPClient.
+            source URL, expert report). Both use the PoliteHTTPClient.
 
 enrichment  Public opportunity discovery — scrapes configured monitors
             (municipality portals, PNRR API, RSS feeds) and stores new
             opportunities in public_opportunities, linking them to properties.
 
-all         Runs PVP then enrichment, sharing one AntiBanHTTPClient so
+all         Runs PVP then enrichment, sharing one PoliteHTTPClient so
             rate-limiting and session rotation are applied uniformly.
 
 Transaction safety
@@ -23,13 +23,18 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, date, timezone
+from datetime import datetime, date
 from typing import Optional
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config.settings import get_settings, load_yaml_config
+from app.config.settings import (
+    get_ingestion_mode_config,
+    get_settings,
+    load_yaml_config,
+    resolve_ingestion_mode,
+)
 from app.core.enrichment_engine import EnrichmentEngine, OpportunityInput
 from app.core.risk_engine import RiskEngine
 from app.core.roi_engine import ROIEngine
@@ -45,7 +50,7 @@ from app.db.repository import (
 )
 from app.ingestion.cancellation import consume, is_cancel_requested
 from app.ingestion.http_client import (
-    AntiBanHTTPClient,
+    PoliteHTTPClient,
     AccessDenied,
     DailyCap,
     RateLimited,
@@ -61,9 +66,12 @@ class _CancelledByAdmin(Exception):
 
 
 class IngestionService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, dry_run: bool | None = None) -> None:
         self._session = session
         self._settings = get_settings()
+        # Explicit dry_run wins over the (cached) env setting.
+        self._mode = resolve_ingestion_mode(dry_run)
+        self._is_dry_run = self._mode == "dry_run"
         self._yaml_cfg = load_yaml_config()
         self._roi_engine = ROIEngine(self._yaml_cfg["roi"])
         self._risk_engine = RiskEngine(self._yaml_cfg["risk"])
@@ -80,7 +88,7 @@ class IngestionService:
 
     # ── Public entry point ────────────────────────────────────────────────────
 
-    async def run(self, source: str = "pvp") -> dict:
+    async def run(self, source: str = "pvp", force: bool = False) -> dict:
         """
         Execute one ingestion run.
 
@@ -88,15 +96,33 @@ class IngestionService:
           "pvp"        → strategy 1+2: PVP list pages + per-auction detail pages
           "enrichment" → strategy 3:   public opportunity discovery
           "all"        → PVP then enrichment, sharing one HTTP client
+
+        force:
+          run even if the previous run was stopped by an HTTP 403. A 403 means
+          the source does not want our traffic: we stop and wait for a human
+          decision instead of retrying automatically.
         """
         run_pvp = source in ("pvp", "all")
         run_enrichment = source in ("enrichment", "all")
 
         run_id = str(uuid.uuid4())[:8]
-        mode = (
-            "dry_run" if self._settings.is_dry_run else self._settings.ingestion_mode
-        )
+        mode = self._mode
         log.info("ingestion.start", run_id=run_id, source=source, mode=mode)
+
+        if not self._is_dry_run and not force:
+            blocked_by = await self._logs.last_access_denied(source)
+            if blocked_by:
+                log.error("ingestion.blocked_by_403", previous_run=blocked_by)
+                return {
+                    "run_id": run_id,
+                    "status": IngestionStatus.FAILED.value,
+                    "error_detail": (
+                        f"Skipped: run {blocked_by} received HTTP 403. "
+                        "Investigate, then trigger manually with force=true."
+                    ),
+                    "pages_fetched": 0, "records_found": 0, "records_inserted": 0,
+                    "records_updated": 0, "errors_count": 1, "requests_made": 0,
+                }
 
         log_entry = await self._logs.create(
             {"run_id": run_id, "source": source, "mode": mode}
@@ -120,7 +146,13 @@ class IngestionService:
         run_timeout = self._yaml_cfg["ingestion"].get("max_run_seconds", 3600)
 
         try:
-            async with AntiBanHTTPClient() as client:
+            # Daily cap is persisted via ingestion_logs, so it survives restarts.
+            already_today = 0 if self._is_dry_run else await self._logs.requests_today()
+            async with PoliteHTTPClient(
+                mode_config=get_ingestion_mode_config(self._is_dry_run),
+                dry_run=self._is_dry_run,
+                initial_request_count=already_today,
+            ) as client:
                 # ── Strategy 1+2: PVP list pages + detail pages ───────────────
                 if run_pvp:
                     cursor_page = await self._logs.get_cursor("pvp")
@@ -133,7 +165,7 @@ class IngestionService:
                     )
 
                 # ── Strategy 3: public enrichment discovery ───────────────────
-                if run_enrichment and not self._settings.is_dry_run:
+                if run_enrichment and not self._is_dry_run:
                     await self._run_enrichment_strategy(client, stats, run_id)
 
         except asyncio.TimeoutError:
@@ -187,7 +219,7 @@ class IngestionService:
 
     async def _run_pvp_strategy(
         self,
-        client: AntiBanHTTPClient,
+        client: PoliteHTTPClient,
         stats: dict,
         start_page: int = 0,
         run_id: str = "",
@@ -250,13 +282,13 @@ class IngestionService:
     # ── Strategy 3: public enrichment discovery ───────────────────────────────
 
     async def _run_enrichment_strategy(
-        self, client: AntiBanHTTPClient, stats: dict, run_id: str
+        self, client: PoliteHTTPClient, stats: dict, run_id: str
     ) -> None:
         """
         Strategy 3: run configured municipality monitors to discover public
         opportunities, then correlate them with existing properties.
 
-        Uses the same AntiBanHTTPClient as the PVP strategy so all HTTP
+        Uses the same PoliteHTTPClient as the PVP strategy so all HTTP
         calls count toward the same rate-limit and session rotation budget.
         """
         from app.ingestion.discovery.discovery_service import DiscoveryService
@@ -283,7 +315,7 @@ class IngestionService:
 
     async def _fetch_list_page(
         self,
-        client: AntiBanHTTPClient,
+        client: PoliteHTTPClient,
         url: str,
         api_body: dict,
         page: int,
@@ -312,7 +344,7 @@ class IngestionService:
 
     async def _process_pvp_page(
         self,
-        client: AntiBanHTTPClient,
+        client: PoliteHTTPClient,
         records: list,
         stats: dict,
         run_id: str,
@@ -331,7 +363,7 @@ class IngestionService:
         )
 
     async def _process_pvp_record(
-        self, client: AntiBanHTTPClient, record: dict, stats: dict
+        self, client: PoliteHTTPClient, record: dict, stats: dict
     ) -> None:
         """
         Process one PVP search result:
@@ -354,7 +386,7 @@ class IngestionService:
 
             # Strategy 2: detail page fetches valore di stima, source URL, etc.
             needs_detail = auction_created or not auction.source_url
-            if needs_detail and not self._settings.is_dry_run:
+            if needs_detail and not self._is_dry_run:
                 await self._fetch_pvp_detail(client, auction, prop, external_id, stats)
 
             if auction_created:
@@ -395,7 +427,7 @@ class IngestionService:
 
     async def _fetch_pvp_detail(
         self,
-        client: AntiBanHTTPClient,
+        client: PoliteHTTPClient,
         auction,
         prop,
         external_id: str,

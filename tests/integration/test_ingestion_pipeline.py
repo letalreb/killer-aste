@@ -32,16 +32,16 @@ async def _db_available() -> bool:
 
 
 @pytest.fixture(scope="module")
-def db_required(event_loop):
+def db_required():
     """Skip the whole module if DB is not available."""
     import asyncio
-    available = asyncio.get_event_loop().run_until_complete(_db_available())
+    available = asyncio.run(_db_available())
     if not available:
         pytest.skip("PostgreSQL not available – skipping integration tests")
 
 
 @pytest_asyncio.fixture
-async def db_session():
+async def db_session(db_required):
     from app.db.database import AsyncSessionFactory
     from app.db.models import Base
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -57,13 +57,16 @@ async def db_session():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+    # The app engine pools connections per event loop; drop them between tests.
+    from app.db.database import engine as app_engine
+    await app_engine.dispose()
 
 
 class TestIngestionPipeline:
     async def test_dry_run_completes_successfully(self, db_session, db_required):
         from app.ingestion.ingestion_service import IngestionService
 
-        service = IngestionService(db_session)
+        service = IngestionService(db_session, dry_run=True)
         result = await service.run(source="pvp")
 
         assert result["status"] == "dry_run"
@@ -74,7 +77,7 @@ class TestIngestionPipeline:
         from app.ingestion.ingestion_service import IngestionService
         from app.db.repository import AuctionRepository, PropertyRepository
 
-        service = IngestionService(db_session)
+        service = IngestionService(db_session, dry_run=True)
         await service.run(source="pvp")
 
         prop_repo = PropertyRepository(db_session)
@@ -91,7 +94,7 @@ class TestIngestionPipeline:
         from app.ingestion.ingestion_service import IngestionService
         from app.db.repository import AuctionRepository
 
-        service = IngestionService(db_session)
+        service = IngestionService(db_session, dry_run=True)
         await service.run(source="pvp")
 
         first_count_result = await AuctionRepository(db_session).count_by_status()
@@ -106,11 +109,11 @@ class TestIngestionPipeline:
 
     async def test_roi_computed_for_new_auctions(self, db_session, db_required):
         from app.ingestion.ingestion_service import IngestionService
-        from app.db.repository import AuctionRepository, ValuationRepository
+        from app.db.repository import ValuationRepository
         import sqlalchemy as sa
         from app.db.models import Auction
 
-        service = IngestionService(db_session)
+        service = IngestionService(db_session, dry_run=True)
         await service.run(source="pvp")
 
         result = await db_session.execute(sa.select(Auction).limit(1))
@@ -125,10 +128,55 @@ class TestIngestionPipeline:
         from app.ingestion.ingestion_service import IngestionService
         from app.db.repository import IngestionLogRepository
 
-        service = IngestionService(db_session)
-        result = await service.run(source="pvp")
+        service = IngestionService(db_session, dry_run=True)
+        await service.run(source="pvp")
 
         log_repo = IngestionLogRepository(db_session)
         last = await log_repo.get_last_successful("pvp")
         # In dry_run mode status = dry_run, not completed
         assert last is None or last.mode == "dry_run"
+
+    async def test_explicit_dry_run_overrides_env(self, db_session, db_required, monkeypatch):
+        """dry_run=True must never touch the network, whatever the env says."""
+        import httpx
+        from app.ingestion.ingestion_service import IngestionService
+
+        async def _no_network(*_a, **_k):
+            raise AssertionError("network call attempted during dry run")
+
+        monkeypatch.setattr(httpx.AsyncClient, "request", _no_network)
+        result = await IngestionService(db_session, dry_run=True).run(source="pvp")
+        assert result["status"] == "dry_run"
+
+    async def test_403_blocks_next_real_run_until_forced(self, db_session, db_required, monkeypatch):
+        import httpx
+        from app.db.models import IngestionLog, IngestionStatus
+        from app.ingestion.ingestion_service import IngestionService
+
+        db_session.add(IngestionLog(
+            run_id="blocked1", source="pvp", mode="safe", status=IngestionStatus.FAILED,
+            error_detail="HTTP 403 – source refused access; run stopped",
+        ))
+        await db_session.commit()
+
+        async def _no_network(*_a, **_k):
+            raise AssertionError("network call attempted while blocked")
+
+        monkeypatch.setattr(httpx.AsyncClient, "request", _no_network)
+        result = await IngestionService(db_session, dry_run=False).run(source="pvp")
+        assert result["status"] == "failed"
+        assert "blocked1" in result["error_detail"]
+        assert result["requests_made"] == 0
+
+    async def test_requests_today_counts_real_runs_only(self, db_session, db_required):
+        from app.db.models import IngestionLog, IngestionStatus
+        from app.db.repository import IngestionLogRepository
+
+        db_session.add_all([
+            IngestionLog(run_id="r1", source="pvp", mode="safe",
+                         status=IngestionStatus.COMPLETED, requests_made=40),
+            IngestionLog(run_id="r2", source="pvp", mode="dry_run",
+                         status=IngestionStatus.DRY_RUN, requests_made=500),
+        ])
+        await db_session.commit()
+        assert await IngestionLogRepository(db_session).requests_today() == 40

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional, Sequence
 
 import structlog
@@ -346,6 +347,40 @@ class IngestionLogRepository:
         if not log or not log.extra:
             return 0
         return int(log.extra.get("next_page", 0))
+
+
+    async def requests_today(self, tz: str = "Europe/Rome") -> int:
+        """Real (non dry-run) HTTP requests made since local midnight, all sources."""
+        now_local = datetime.now(ZoneInfo(tz))
+        midnight = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        result = await self._session.execute(
+            select(func.coalesce(func.sum(IngestionLog.requests_made), 0)).where(
+                IngestionLog.started_at >= midnight,
+                IngestionLog.mode != "dry_run",
+            )
+        )
+        return int(result.scalar_one())
+
+    async def last_access_denied(self, source: str) -> Optional[str]:
+        """
+        If the most recent finished real run touching PVP ended with HTTP 403,
+        return its run_id. Used to stop automatic retries after a refusal.
+        """
+        sources = ["pvp", "all"] if source in ("pvp", "all") else [source]
+        result = await self._session.execute(
+            select(IngestionLog)
+            .where(
+                IngestionLog.source.in_(sources),
+                IngestionLog.mode != "dry_run",
+                IngestionLog.status != IngestionStatus.RUNNING,
+            )
+            .order_by(IngestionLog.started_at.desc())
+            .limit(1)
+        )
+        last = result.scalar_one_or_none()
+        if last and (last.error_detail or "").startswith("HTTP 403"):
+            return last.run_id
+        return None
 
 
 class UserRepository:

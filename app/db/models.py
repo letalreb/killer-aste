@@ -347,6 +347,33 @@ class LoginAudit(Base):
     )
 
 
+class UserFavorite(Base):
+    """Auctions a user bookmarked. The per-user limit (users.max_favorites) is
+    enforced server-side in the favorites API."""
+
+    __tablename__ = "user_favorites"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    auction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("auctions.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    auction: Mapped["Auction"] = relationship("Auction")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "auction_id", name="uq_user_favorites_user_auction"),
+        Index("ix_user_favorites_user_id", "user_id"),
+    )
+
+
 class IngestionLog(Base):
     __tablename__ = "ingestion_log"
 

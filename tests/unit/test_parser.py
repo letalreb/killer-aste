@@ -1,7 +1,6 @@
 """Unit tests for the PVP JSON REST API parser."""
 from __future__ import annotations
 
-import pytest
 from app.ingestion.parser import is_last_page, parse_api_response
 from app.ingestion.mock_responses import _make_page_response, _MOCK_RECORDS
 

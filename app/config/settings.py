@@ -12,14 +12,20 @@ load_yaml_config().
 """
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+_INSECURE_SECRET_KEYS = {
+    "",
+    "dev-secret-key",
+    "change-me-in-production-use-openssl-rand-hex-32",
+}
 
 
 class Settings(BaseSettings):
@@ -52,17 +58,19 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     db_pool_timeout: int = 30
 
-    # ── Redis ─────────────────────────────────────────────────────────────────
-    redis_url: str = Field(
-        default="redis://localhost:6379/0", alias="REDIS_URL"
-    )
-    redis_enabled: bool = Field(default=True, alias="REDIS_ENABLED")
-
     # ── Ingestion ─────────────────────────────────────────────────────────────
     ingestion_mode: Literal["safe", "normal", "dry_run"] = Field(
         default="safe", alias="INGESTION_MODE"
     )
     dry_run: bool = Field(default=False, alias="DRY_RUN")
+    # In-process APScheduler. Disable it on hosts that sleep when idle
+    # (e.g. Render free plan) and trigger runs from an external cron instead.
+    scheduler_enabled: bool = Field(default=True, alias="SCHEDULER_ENABLED")
+    # Honest, identifiable User-Agent sent to the sources we read.
+    ingestion_user_agent: str = Field(
+        default="KillerAsteBot/1.0 (+https://github.com/letalreb/killer-aste)",
+        alias="INGESTION_USER_AGENT",
+    )
     config_path: str = Field(default="config/config.yaml", alias="CONFIG_PATH")
 
     # ── API ───────────────────────────────────────────────────────────────────
@@ -77,14 +85,31 @@ class Settings(BaseSettings):
 
     # ── Monitoring ────────────────────────────────────────────────────────────
     enable_metrics: bool = Field(default=True, alias="ENABLE_METRICS")
-    otlp_endpoint: str = Field(
-        default="http://localhost:4317", alias="OTLP_ENDPOINT"
-    )
+
+    # ── CORS ──────────────────────────────────────────────────────────────────
+    frontend_url: str = Field(default="", alias="FRONTEND_URL")
+
+    @field_validator("ingestion_user_agent")
+    @classmethod
+    def _default_user_agent_if_blank(cls, v: str) -> str:
+        return v.strip() or "KillerAsteBot/1.0 (+https://github.com/letalreb/killer-aste)"
 
     @field_validator("log_level")
     @classmethod
     def normalise_log_level(cls, v: str) -> str:
         return v.upper()
+
+    @model_validator(mode="after")
+    def _check_production_secrets(self) -> "Settings":
+        if self.app_env == "production":
+            if self.secret_key in _INSECURE_SECRET_KEYS or len(self.secret_key) < 32:
+                raise ValueError(
+                    "SECRET_KEY must be set to a random value of at least 32 chars "
+                    "in production (e.g. `openssl rand -hex 32`)."
+                )
+            if not self.google_client_id:
+                raise ValueError("GOOGLE_CLIENT_ID must be set in production.")
+        return self
 
     @property
     def is_production(self) -> bool:
@@ -112,8 +137,16 @@ def load_yaml_config() -> dict:
         return yaml.safe_load(fh)
 
 
-def get_ingestion_mode_config() -> dict:
-    cfg = load_yaml_config()
+def resolve_ingestion_mode(dry_run: bool | None = None) -> str:
+    """Effective ingestion mode. An explicit ``dry_run`` overrides the env setting."""
     settings = get_settings()
-    mode = settings.ingestion_mode if not settings.is_dry_run else "dry_run"
-    return cfg["ingestion"]["modes"][mode]
+    is_dry = settings.is_dry_run if dry_run is None else dry_run
+    if is_dry:
+        return "dry_run"
+    # Explicit real run while INGESTION_MODE=dry_run: fall back to the safest mode.
+    return "safe" if settings.ingestion_mode == "dry_run" else settings.ingestion_mode
+
+
+def get_ingestion_mode_config(dry_run: bool | None = None) -> dict:
+    cfg = load_yaml_config()
+    return cfg["ingestion"]["modes"][resolve_ingestion_mode(dry_run)]

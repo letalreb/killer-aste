@@ -16,7 +16,15 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import admin, analytics, auctions, auth, enrichment, properties
+from app.api.routes import (
+    admin,
+    analytics,
+    auctions,
+    auth,
+    enrichment,
+    favorites,
+    properties,
+)
 from app.api.routes.auth import get_current_user
 from app.config.settings import get_settings
 from app.ingestion.scheduler import start_scheduler, stop_scheduler
@@ -107,22 +115,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-_frontend_origins = [
-    "http://localhost:5173",
-    "http://localhost:4173",
-]
+_frontend_origins = ["http://localhost:5173", "http://localhost:4173"]
 if settings.is_production:
-    import os
-    _prod_origin = os.getenv("FRONTEND_URL", "")
-    if _prod_origin:
-        _frontend_origins.append(_prod_origin)
+    _frontend_origins = [settings.frontend_url] if settings.frontend_url else []
 
+# Auth uses a bearer token, not cookies, so credentials are not needed.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if not settings.is_production else _frontend_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ── Prometheus metrics ────────────────────────────────────────────────────────
@@ -142,6 +145,7 @@ app.include_router(properties.router, prefix="/api/v1", dependencies=_auth_dep)
 app.include_router(analytics.router, prefix="/api/v1", dependencies=_auth_dep)
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(enrichment.router, prefix="/api/v1")
+app.include_router(favorites.router, prefix="/api/v1")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -151,7 +155,7 @@ app.include_router(enrichment.router, prefix="/api/v1")
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     log = structlog.get_logger(__name__)
-    log.error("unhandled_exception", path=request.url.path, error=str(exc))
+    log.exception("unhandled_exception", path=request.url.path, error=str(exc))
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"},
@@ -169,14 +173,14 @@ async def health() -> dict:
 
 @app.get("/ready", tags=["ops"])
 async def readiness() -> dict:
-    """Check DB connectivity."""
+    """Check DB connectivity. Details are logged, never returned to the caller."""
+    from sqlalchemy import text
+
     from app.db.database import engine
     try:
         async with engine.connect() as conn:
-            await conn.execute(__import__("sqlalchemy").text("SELECT 1"))
+            await conn.execute(text("SELECT 1"))
         return {"status": "ready"}
     except Exception as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"status": "not_ready", "error": str(exc)},
-        )
+        structlog.get_logger(__name__).error("readiness.db_unavailable", error=str(exc))
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
